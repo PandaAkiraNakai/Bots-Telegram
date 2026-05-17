@@ -276,12 +276,12 @@ label = "📓 Obsidian (Ciencias)"
 
 - Sesión gráfica activa de `sergioc` (login abierto). Sin sesión, el
   `systemd --user` no está corriendo y `systemd-run --user` falla con
-  *"Failed to connect to bus"*. Si querés que funcione sin sesión:
+  *"Failed to connect to bus"*. Si quieres que funcione sin sesión:
   `loginctl enable-linger sergioc` (no recomendado — apps GUI quedan
   huérfanas hasta que abras niri).
 - Path absoluto si el binario no está en el `PATH` del environment
   del daemon (ver el unit). Para apps en `/opt/...` o paquetes con
-  binarios fuera de `/usr/bin`, usá path completo.
+  binarios fuera de `/usr/bin`, usa el path completo.
 
 A diferencia de poder/kill/svc, los lanzamientos de apps **no** piden
 confirmación (son inocuos). Se loggean en el audit log como `app_launch`.
@@ -352,7 +352,7 @@ chequea cada `chat_auto_delete_interval_s` (default 60s).
 
 Telegram solo permite a un bot borrar **sus propios** mensajes y solo
 hasta 48h después de enviados. Los taps de botones (callback queries)
-y los pocos mensajes que vos mandás al bot no se tocan. Cada lote de
+y los pocos mensajes que tú envías al bot no se tocan. Cada lote de
 borrados se loggea como `chat_reaped` (con `count`) en el audit.
 
 ## Operaciones

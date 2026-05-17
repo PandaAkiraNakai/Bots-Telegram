@@ -118,7 +118,7 @@ Por default el bot **borra solo sus propios mensajes a los 30 min**
 de prompts viejos. Un thread reaper chequea cada
 `chat_auto_delete_interval_s` (default 60s). Setea `chat_auto_delete_s = 0`
 para desactivar. Telegram solo permite a un bot borrar sus propios
-mensajes hasta 48h después; los mensajes que vos mandás al bot
+mensajes hasta 48h después; los mensajes que tú envías al bot
 (taps de botones cuentan como callback queries, no mensajes) no se
 tocan. Cada lote de borrados se loggea como `chat_reaped` en el audit.
 
@@ -153,7 +153,7 @@ bash ~/.bots/sudo-telegram/tools/test-flow.sh
 
 Te llega el mensaje a Telegram con dos botones. Tap ✅ Sí. El test
 imprime `DRY_RUN_FAKE_PASSWORD` (porque el daemon está en dry-run) y
-sale 0. Tap ❌ No (o esperar 60s) → exit 1. Si preferís texto, también
+sale 0. Tap ❌ No (o esperar 60s) → exit 1. Si prefieres texto, también
 funciona `/yes_<id>` o `/no_<id>`.
 
 Cuando todo se vea bien, flip:
@@ -271,7 +271,7 @@ en una sandbox**. Lo que sigue siendo atacable:
 8. **El cmd del prompt es confiable, pero la ejecución posterior no.**
    El daemon lee `/proc/<sudo_pid>/cmdline` como root (con
    `CAP_SYS_PTRACE`), así que ves el `argv` real con el que se invocó
-   `sudo`. Lo que no podés ver es qué pasa *después* de que sudo libera
+   `sudo`. Lo que no puedes ver es qué pasa *después* de que sudo libera
    el password — un binario whitelisteado o un comando que escribe a
    archivos arbitrarios sigue siendo un vector. La verificación real
    exigiría un PAM custom con token one-shot atado al PID; fuera de

@@ -182,7 +182,7 @@ whisper_language = ""            # "" = autodetect; "es", "en", etc.
 ```
 
 Defaults: `small` en CPU con int8 — ~470MB de pesos, corre rápido en
-cualquier CPU moderna, alcanza para voice notes en español. Si tenés
+cualquier CPU moderna, alcanza para voice notes en español. Si tienes
 GPU, `whisper_device = "cuda"` y `whisper_compute_type = "float16"`
 con un modelo más grande te da mejor calidad.
 
@@ -247,7 +247,7 @@ consolidada — solo el texto del modelo, sin los indicadores de
 `tool_use`. La idea es separar visualmente "lo que claude hizo" (el
 mensaje editado en vivo) de "la respuesta a lo pedido" (el mensaje
 limpio al final). Hay duplicación con lo que ya viste streamearse;
-ese es el costo. Poné `summary_message_enabled = false` si preferís
+ese es el costo. Pon `summary_message_enabled = false` si prefieres
 solo el streaming sin el mensaje extra.
 
 ### Para volver al modo viejo
@@ -326,7 +326,7 @@ es:
 3. El daemon te manda un prompt al **bot de aprobaciones**
    (`@tu_bot_de_sudo_bot`, distinto al de chat con claude). Con botón
    ✅ Sí / ❌ No.
-4. Aprobás → password se libera → sudo escala a root → el comando corre.
+4. Apruebas → la contraseña se libera → sudo escala a root → el comando corre.
 
 Para que esto funcione el unit tiene `NoNewPrivileges=no` y no incluye
 `RestrictSUIDSGID=yes`. Sin esos dos flags off, el kernel le rehúsa a
@@ -356,11 +356,11 @@ control de seguridad real es la aprobación por Telegram, no esos flags.
    ejecuta tools de lectura. Activa 2FA en Telegram.
 
 2. **El bot corre como `sergioc`** y, vía `sudo -A` + sudo-telegram,
-   puede pedir aprobación para correr cualquier cosa como root. Lo que
-   tú podés hacer sin sudo, el bot también; lo que requiera sudo queda
-   gateado por una aprobación tuya en `@tu_bot_de_sudo_bot`. Lee tus
-   archivos personales, ssh keys (si claude lo decide o si se lo pedís),
-   etc.
+   puede pedir aprobación para ejecutar cualquier cosa como root. Lo
+   que tú puedes hacer sin sudo, el bot también; lo que requiera sudo
+   queda gateado por una aprobación tuya en `@tu_bot_de_sudo_bot`.
+   Lee tus archivos personales, ssh keys (si claude lo decide o si se
+   lo pides), etc.
 
 3. **El token del bot, si se filtra, permite leer tus mensajes** (qué
    le estás pidiendo a Claude). NO permite mandar al chat porque sólo
