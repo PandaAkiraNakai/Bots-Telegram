@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.swp
+*.swo
+.DS_Store
+
+# Don't commit any real secrets if someone copies them in by mistake
+config.toml
+password

@@ -1,0 +1,42 @@
+[Unit]
+Description=claude-telegram bot daemon
+Documentation=file:///home/sergioc/.bots/claude-telegram/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run the daemon under the venv python so faster-whisper (and ctranslate2)
+# are importable. The venv is provisioned by INSTALL.sh.
+ExecStart=/opt/claude-telegram/venv/bin/python /usr/local/bin/claude-telegram-daemon
+Restart=on-failure
+RestartSec=3
+User=sergioc
+Group=sergioc
+# Needed so claude's child `sudo -A` can talk to /run/sudo-telegram/sock.
+SupplementaryGroups=sudo-telegram
+
+# claude needs HOME to find ~/.claude, ~/.local/bin, etc.
+Environment=HOME=/home/sergioc
+Environment=PATH=/home/sergioc/.local/bin:/usr/local/bin:/usr/bin:/bin
+# So any sudo invoked by claude routes through the sudo-telegram approval bot.
+Environment=SUDO_ASKPASS=/usr/local/bin/sudo-telegram-askpass
+
+# Hardening — daemon runs as sergioc.
+#
+# NoNewPrivileges and RestrictSUIDSGID son intencionalmente NO porque
+# claude (lanzado por este daemon) necesita poder hacer `sudo -A`, lo que
+# requiere setuid y por tanto que el bit no_new_privs no esté seteado y
+# que suid no esté restringido. La aprobación sigue gateada por el bot
+# sudo-telegram (vía SUDO_ASKPASS arriba) — ese es el control real.
+NoNewPrivileges=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

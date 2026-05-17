@@ -1,0 +1,41 @@
+[Unit]
+Description=Bot Comandos Torre — Telegram control + monitoring bot for this PC
+Documentation=file:///home/sergioc/.bots/Bot_Comandos_Torre/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bot-comandos-torre
+User=sergioc
+Group=sergioc
+Restart=on-failure
+RestartSec=5
+
+# Necesita escribir SQLite + audit log + known_hosts.
+# StateDirectory= y LogsDirectory= los crea systemd con perms correctas.
+# (Si fallan en este host por capabilities, INSTALL.sh los pre-crea y systemd
+# los reusa.)
+StateDirectory=bot-comandos-torre
+LogsDirectory=bot-comandos-torre
+StateDirectoryMode=0700
+LogsDirectoryMode=0750
+
+# Hardening — el daemon lee /etc/bot-comandos-torre, escribe a sus state/log dirs,
+# habla con dbus para systemctl/loginctl, y opcionalmente usa SSH (lee ~/.ssh).
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/etc/bot-comandos-torre
+ReadWritePaths=/var/lib/bot-comandos-torre /var/log/bot-comandos-torre
+PrivateTmp=yes
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

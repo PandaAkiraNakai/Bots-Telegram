@@ -1,0 +1,52 @@
+// /etc/polkit-1/rules.d/50-bot-comandos-torre.rules
+//
+// Allow user 'sergioc' to:
+//   1) invoke logind power/lock actions sin auth.
+//   2) start/stop/restart un set narrow-scope de unidades systemd.
+//
+// Esto es lo que le permite a bot-comandos-torre apagar/reiniciar/suspender
+// y manejar servicios sin sudo y sin prompt polkit.
+//
+// Scope: solo este usuario, solo estas acciones, solo estas unidades.
+
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "sergioc") {
+        return;
+    }
+
+    var loginActions = [
+        "org.freedesktop.login1.power-off",
+        "org.freedesktop.login1.power-off-multiple-sessions",
+        "org.freedesktop.login1.reboot",
+        "org.freedesktop.login1.reboot-multiple-sessions",
+        "org.freedesktop.login1.suspend",
+        "org.freedesktop.login1.suspend-multiple-sessions",
+        "org.freedesktop.login1.lock-sessions",
+    ];
+    if (loginActions.indexOf(action.id) >= 0) {
+        return polkit.Result.YES;
+    }
+
+    var systemdActions = [
+        "org.freedesktop.systemd1.manage-units",
+        "org.freedesktop.systemd1.manage-unit-files",
+        "org.freedesktop.systemd1.reload-daemon",
+    ];
+    if (systemdActions.indexOf(action.id) >= 0) {
+        var unit = action.lookup("unit") || "";
+        // Whitelist de unidades que sergioc puede manejar sin auth.
+        // Bot_Comandos_Torre.service NO está acá: reiniciar el bot a sí mismo
+        // queda fuera de alcance (hacelo por ssh o sudo manualmente).
+        var allowedUnits = {
+            "sshd.service": true,
+            "NetworkManager.service": true,
+            "systemd-resolved.service": true,
+            "sudo-telegram.service": true,
+            "claude-telegram.service": true,
+            "docker.service": true,
+        };
+        if (allowedUnits[unit]) {
+            return polkit.Result.YES;
+        }
+    }
+});

@@ -1,0 +1,169 @@
+# Bot Comandos Torre — config.
+#
+# Pídele uno a @BotFather (/newbot) y pega el token aquí.
+# chat_id es tu chat personal de Telegram. Cualquier otro chat se ignora.
+
+bot_token = "REPLACE_ME"
+chat_id = 0
+
+# Long-poll timeout (segundos) para Telegram getUpdates.
+poll_timeout_s = 25
+
+# Auto-borrado del chat. El bot manda muchos mensajes (alertas, reportes,
+# tendencia, "torre iniciada"); a las N segundos se borran solos para
+# que el chat no se llene. 0 desactiva. Telegram solo permite a un bot
+# borrar SUS PROPIOS mensajes hasta 48h. El reaper chequea cada
+# `chat_auto_delete_interval_s`. Cada lote borrado se loggea en audit
+# como `chat_reaped`.
+chat_auto_delete_s = 1800       # 30 min
+chat_auto_delete_interval_s = 60
+
+# ─── Monitor (loop de fondo) ─────────────────────────────────────────────
+[monitor]
+enabled = true
+interval_s = 60      # cada cuánto muestrea métricas y chequea umbrales
+
+# ─── Alertas (umbrales con histéresis + cooldown) ────────────────────────
+# hi: dispara la alerta cuando se cruza ascendiendo.
+# lo: rearma la alerta cuando se cruza descendiendo.
+# cooldown_s: tiempo mínimo entre dos alertas iguales.
+
+[alerts.cpu_pct]
+hi = 90.0
+lo = 75.0
+cooldown_s = 600
+
+[alerts.ram_pct]
+hi = 90.0
+lo = 80.0
+cooldown_s = 600
+
+[alerts.disk_pct]
+hi = 90.0
+lo = 80.0
+cooldown_s = 3600
+
+[alerts.cpu_temp_c]
+hi = 85.0
+lo = 75.0
+cooldown_s = 600
+
+[alerts.gpu_temp_c]
+hi = 85.0
+lo = 75.0
+cooldown_s = 600
+
+[alerts.gpu_pct]
+hi = 95.0
+lo = 80.0
+cooldown_s = 900
+
+[alerts.load1_per_core]
+hi = 2.0
+lo = 1.5
+cooldown_s = 600
+
+# ─── Histórico (SQLite + matplotlib opcional) ────────────────────────────
+[history]
+db_path = "/var/lib/bot-comandos-torre/metrics.db"
+retain_days = 14
+
+# ─── Auditoría (JSONL append-only) ───────────────────────────────────────
+[audit]
+log_path = "/var/log/bot-comandos-torre/audit.log"
+
+# ─── Red ─────────────────────────────────────────────────────────────────
+[network]
+ping_hosts = ["1.1.1.1", "8.8.8.8"]
+
+# ─── Servicios ───────────────────────────────────────────────────────────
+[services]
+# Estos aparecen en "Activos clave" (solo lectura).
+watch = [
+    "sshd",
+    "NetworkManager",
+    "systemd-resolved",
+    "sudo-telegram",
+    "claude-telegram",
+    "bot-comandos-torre",
+    "docker",
+]
+# Estos aparecen en "Controlar" — start/stop/restart vía polkit narrow-scope.
+# Tienen que estar también listados en 50-bot-comandos-torre.rules.
+manageable = [
+    "sshd",
+    "NetworkManager",
+    "sudo-telegram",
+    "claude-telegram",
+    "docker",
+]
+
+# ─── SSH multihost (opcional) ────────────────────────────────────────────
+# Cada [hosts.<nombre>] aparece como botón en "🌐 Otros hosts".
+# ssh_alias se resuelve vía /home/sergioc/.ssh/config (que el daemon lee
+# read-only). Las claves privadas también se leen desde ahí.
+# El daemon usa BatchMode=yes y ConnectTimeout=5, así que un host caído
+# no cuelga la UI.
+#
+# [hosts.vpspriv]
+# ssh_alias = "vpspriv"
+# [hosts.vpsgames]
+# ssh_alias = "vpsgames"
+
+[ssh]
+known_hosts = "/var/lib/bot-comandos-torre/known_hosts"
+
+# ─── Updates (Arch / CachyOS) ────────────────────────────────────────────
+[updates]
+# Default: checkupdates (paquete pacman-contrib).
+# Otra opción: ["pacman", "-Qu"] (requiere DB sincronizada).
+command = ["checkupdates"]
+
+# ─── SMART (salud de discos) ─────────────────────────────────────────────
+# Lista de devices a chequear. smartctl normalmente requiere root —
+# si quieres usarlo desde aquí, activa [sudo] enabled = true (requiere
+# sudo-telegram y aprobación cada vez), o agrega el binario a sudoers
+# con NOPASSWD para sergioc, o deja la lista vacía.
+[smart]
+devices = []
+# devices = ["/dev/nvme0n1"]
+
+# ─── sudo (opcional, para SMART y otras acciones que requieren root) ─────
+# Si true, comandos como smartctl se invocan con `sudo -A`. Eso dispara
+# una aprobación en @tu_bot_de_sudo_bot (sudo-telegram). Requiere que
+# SUDO_ASKPASS esté seteado y que el grupo sudo-telegram esté en
+# SupplementaryGroups del unit.
+[sudo]
+enabled = false
+
+# ─── Apps (lanzar aplicaciones GUI desde el celular) ─────────────────────
+# Cada [apps.<nombre>] aparece como botón en "🚀 Apps". El bot las lanza
+# con `systemd-run --user --collect --quiet -- <cmd>` contra el systemd
+# manager del usuario, así heredan DISPLAY/WAYLAND_DISPLAY/etc. de tu
+# sesión gráfica.
+#
+# Requisitos:
+#   · Sesión de sergioc activa (login gráfico abierto). Sin sesión, el
+#     systemd --user no está corriendo y el lanzamiento falla con
+#     "Failed to connect to bus". Si querés que funcione sin sesión
+#     activa: `loginctl enable-linger sergioc` (no recomendado, las apps
+#     GUI quedarían huérfanas hasta que abras niri).
+#   · cmd = lista (no string) — el primer elemento es el ejecutable, el
+#     resto son args. Sin shell expansion, sin globs.
+#   · label es opcional; default es el nombre de la sección.
+#
+# [apps.firefox]
+# cmd = ["firefox"]
+# label = "🦊 Firefox"
+#
+# [apps.discord]
+# cmd = ["discord"]
+# label = "💬 Discord"
+#
+# [apps.steam]
+# cmd = ["steam"]
+# label = "🎮 Steam"
+#
+# [apps.obsidian-ciencias]
+# cmd = ["obsidian", "obsidian://open?vault=Ciencias-"]
+# label = "📓 Obsidian (Ciencias)"

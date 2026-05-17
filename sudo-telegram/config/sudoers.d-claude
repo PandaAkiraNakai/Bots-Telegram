@@ -1,0 +1,51 @@
+# /etc/sudoers.d/claude — sudo-telegram integration for the user 'sergioc'.
+#
+# Validate before saving:   sudo visudo -c -f /etc/sudoers.d/claude
+# Owner / perms:            root:root, 0440
+#
+# This file does TWO things:
+#   1. Tells sudo to use sudo-telegram-askpass when -A is given (or no tty).
+#   2. Lets you whitelist specific commands that bypass approval.
+#
+# It does NOT grant any new sudo permissions. Membership in 'wheel' (or
+# whatever group has sudo on this host) is what grants sudo at all.
+
+# NOTE: this build of sudo (CachyOS / Arch 1.9.17p2) does NOT recognise
+# `Defaults askpass=`. Setting SUDO_ASKPASS in the environment + invoking
+# sudo with -A is the supported path. /etc/profile.d/sudo-telegram.sh
+# exports SUDO_ASKPASS for interactive shells; for non-interactive use,
+# pass it explicitly: SUDO_ASKPASS=/usr/local/bin/sudo-telegram-askpass sudo -A ...
+
+Defaults:sergioc passwd_tries=1
+Defaults:sergioc !lecture
+Defaults:sergioc !visiblepw
+# Keep SUDO_ASKPASS in the environment when sudo invokes the askpass.
+Defaults:sergioc env_keep += "SUDO_ASKPASS"
+
+# ─── Whitelist (NOPASSWD — no Telegram approval) ─────────────────────────────
+#
+# Uncomment ONLY commands that:
+#   • Cannot drop you to a shell or arbitrary file write.
+#   • Do not accept a script argument that is then evaluated.
+#   • Do not accept wildcards that an attacker can leverage (e.g. "rm *").
+#
+# Bad ideas (do NOT whitelist these without arguments lock-down):
+#   vim, nano, less, more, find, awk, sed (-i), tar, git, perl, python, ruby,
+#   sh, bash, zsh, sudo (yes really), chmod, chown, dd
+#
+# Reasonable starting points (review each before uncommenting):
+#
+# sergioc ALL=(root) NOPASSWD: /usr/bin/pacman -Sy
+# sergioc ALL=(root) NOPASSWD: /usr/bin/pacman -Q
+# sergioc ALL=(root) NOPASSWD: /usr/bin/pacman -Qi *
+# sergioc ALL=(root) NOPASSWD: /usr/bin/systemctl status
+# sergioc ALL=(root) NOPASSWD: /usr/bin/systemctl status *
+# sergioc ALL=(root) NOPASSWD: /usr/bin/systemctl is-active *
+# sergioc ALL=(root) NOPASSWD: /usr/bin/journalctl
+# sergioc ALL=(root) NOPASSWD: /usr/bin/journalctl -u *
+# sergioc ALL=(root) NOPASSWD: /usr/bin/ss -tlnp
+# sergioc ALL=(root) NOPASSWD: /usr/bin/dmesg
+
+# Anything not whitelisted falls through to the default (wheel/sudoers),
+# which now requires a password — and that password lives only in the
+# daemon, gated by Telegram approval.

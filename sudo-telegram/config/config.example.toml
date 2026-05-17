@@ -1,0 +1,56 @@
+# /etc/sudo-telegram/config.toml
+#
+# After editing, restart the daemon:  sudo systemctl restart sudo-telegram
+#
+# Permissions: this file MUST be 0400 root:root — it contains the bot token.
+
+# Approval bot — created in BotFather. NOT the channels bot.
+approval_bot_token = "PUT_BOT_TOKEN_HERE"
+
+# Your personal chat_id with the approval bot.
+# Get it with: TOKEN=<token> bash tools/get-chat-id.sh
+chat_id = 0
+
+# Path to a file containing your sudo password (single line).
+# Permissions: 0400 root:root.
+password_path = "/etc/sudo-telegram/password"
+
+# Where the daemon listens for askpass clients.
+socket_path = "/run/sudo-telegram/sock"
+
+# Group that owns the socket — members can connect.
+socket_group = "sudo-telegram"
+
+# Append-only audit log.
+log_path = "/var/log/sudo-telegram/audit.log"
+
+# How long the daemon waits for /yes_<id> or /no_<id> before timing out.
+timeout_s = 60
+
+# Long-poll duration for getUpdates. Keep below timeout_s.
+poll_timeout_s = 25
+
+# At most rate_limit_n requests per rate_limit_window_s seconds.
+rate_limit_n = 10
+rate_limit_window_s = 300
+
+# Whitelist of UNIX usernames whose askpass requests are accepted.
+# The daemon checks SO_PEERCRED — UID is verified, not claimed.
+# Empty list means "allow any user".
+allowed_users = ["sergioc"]
+
+# Dry run: send Telegram prompts as usual, but on approval return
+# DRY_RUN_FAKE_PASSWORD instead of the real password. sudo will fail
+# (incorrect password) — useful for testing the flow end-to-end.
+dry_run = false
+
+# Auto-borrado del chat con el bot. Cada mensaje que el bot manda
+# (prompts de aprobación, respuestas a /ping, /list, errores, etc.)
+# se borra después de `chat_auto_delete_s` segundos para evitar que el
+# chat se llene de prompts viejos. 0 desactiva el feature.
+# El reaper chequea cada `chat_auto_delete_interval_s` segundos.
+# Telegram permite a un bot borrar SUS PROPIOS mensajes hasta 48h después
+# de enviados — más viejos quedan; los mensajes que mandás vos al bot no
+# se borran (Telegram no se lo permite a bots en chats privados).
+chat_auto_delete_s = 1800       # 30 min
+chat_auto_delete_interval_s = 60

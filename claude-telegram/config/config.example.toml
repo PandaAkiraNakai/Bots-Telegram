@@ -1,0 +1,110 @@
+# /etc/claude-telegram/config.toml
+#
+# After editing, restart:  sudo systemctl restart claude-telegram
+#
+# Permissions: 0400 sergioc:sergioc — contains the bot token.
+
+# Bot token from BotFather. NOT the sudo bot's token — make a new one.
+bot_token = "PUT_BOT_TOKEN_HERE"
+
+# Your personal chat_id with this bot.
+# Get it with: TOKEN=<token> bash tools/get-chat-id.sh
+chat_id = 0
+
+# Where to find the claude CLI. Default works for sergioc's npm-global.
+claude_bin = "/home/sergioc/.local/bin/claude"
+
+# Working directory claude runs in. Affects file paths, project memory,
+# CLAUDE.md discovery, etc.
+working_dir = "/home/sergioc"
+
+# Extra args appended to every `claude -p` call.
+#
+# Default below: skip claude's own permission prompts (since you can't
+# answer them over Telegram). Anything that needs root will still hit
+# Telegram via `sudo -A` → sudo-telegram approval bot, because
+# SUDO_ASKPASS is exported by the systemd unit.
+#
+# Other options:
+#   []                                          — claude will block on perm prompts (only useful for read-only Q&A)
+#   ["--permission-mode", "acceptEdits"]        — auto-accept edits but ask for bash
+#   ["--model", "claude-sonnet-4-6"]            — pin a model
+extra_args = ["--dangerously-skip-permissions"]
+
+# Hard cap per query (seconds). If claude takes longer it gets killed.
+# Default 10800 = 3 horas.
+timeout_s = 10800
+
+# Long-poll duration for getUpdates.
+poll_timeout_s = 25
+
+# How often to send "typing…" while claude is running.
+typing_interval_s = 4
+
+# Cada cuántos segundos mandar un mensaje "⏳ claude sigue corriendo (X min)"
+# mientras claude está procesando. Sirve para saber que el bot no se colgó
+# en queries largas (el indicador "typing…" es efímero y no queda en el
+# historial). Poné 0 para desactivar.
+# Solo aplica a response_mode="stream"; en "summary" se ignora siempre
+# (el resumen final ya muestra la duración del turno).
+heartbeat_interval_s = 300
+
+# Transcripción de voice notes / audios con faster-whisper (local, sin API).
+# El modelo se carga lazy en RAM la primera vez que llega un audio y queda
+# residente. Pesos se cachean en ~/.cache/huggingface/hub/.
+#
+# whisper_model: "tiny" | "base" | "small" | "medium" | "large-v3" |
+#                "distil-large-v3" | "large-v3-turbo" (cualquier ID HF sirve)
+# whisper_device: "cpu" | "cuda" | "auto"
+# whisper_compute_type: "int8" (cpu) | "float16" (cuda) | "int8_float16" |
+#                       "float32" (lento, máxima calidad)
+# whisper_language: código ISO ("es", "en", …) o "" para autodetectar
+whisper_enabled = true
+whisper_model = "small"
+whisper_device = "cpu"
+whisper_compute_type = "int8"
+whisper_language = ""
+
+# Cómo entrega claude su respuesta al chat.
+#
+# "summary" (default): mientras claude trabaja solo se ve el indicador
+#   "typing…". Al terminar manda UN único mensaje con header (✅/⚠️ +
+#   duración), línea de resumen ("3 leídos · 2 editados · 1 bash") y el
+#   texto de respuesta. No hay tool_use inline ni heartbeat — el chat queda
+#   limpio y la respuesta es fácil de encontrar.
+#
+# "stream": comportamiento clásico — edita el mensaje de Telegram en vivo
+#   a medida que llega texto, intercala las herramientas que claude usa
+#   (📖 Read, 🔧 Bash…) y manda heartbeats si la query es larga. Útil si
+#   querés ver el progreso, ruidoso si solo querés la respuesta.
+response_mode = "summary"
+
+# Switch interno: corre claude con --output-format stream-json (true) o
+# json (false). El modo "summary" funciona igual con cualquiera de los dos,
+# pero stream-json permite contar herramientas y mostrar la duración real
+# del turno. Dejalo en true salvo que tengas razón específica para no.
+streaming_enabled = true
+
+# Mínimo entre ediciones del mensaje cuando response_mode="stream".
+# Telegram tira flood control si pasas de ~1/seg al mismo chat.
+streaming_min_edit_s = 1.2
+
+# Solo aplica a response_mode="stream": cuando hubo tool_use Y el output
+# se partió en varios mensajes, manda al final un mensaje extra con la
+# respuesta limpia. Ignorado en modo "summary".
+summary_message_enabled = true
+
+# Adjuntar archivos generados por claude.
+# Cuando está en true, el daemon snapshotea mtimes antes del turno y al
+# terminar adjunta como sendDocument cualquier archivo modificado/creado
+# durante el turno (capado por count, size y depth).
+#
+# OJO: si working_dir = "/home/sergioc" y dejas esto en true, vas a recibir
+# adjuntos de cualquier write incidental (cache, descargas, etc.) además
+# de lo que claude haga. Para evitar ruido, conviene poner output_attach_dir
+# apuntando a un repo o scratch específico.
+output_attach_enabled = false
+output_attach_dir = ""              # "" = working_dir
+output_attach_max_files = 5
+output_attach_max_bytes = 10485760  # 10 MiB por archivo
+output_attach_max_depth = 4         # niveles desde output_attach_dir
