@@ -1265,19 +1265,19 @@ def note_append(text: str, cfg: dict) -> str:
 # ─── Menús ───────────────────────────────────────────────────────────────────
 
 MAIN_KB = [
-    [{"text": "📊 Estado", "callback_data": "estado"},
-     {"text": "🧠 Procesos", "callback_data": "procesos"}],
-    [{"text": "🔧 Servicios", "callback_data": "servicios"},
-     {"text": "📦 Updates", "callback_data": "updates"}],
-    [{"text": "📈 Tendencia", "callback_data": "trend"},
-     {"text": "🚀 Apps", "callback_data": "apps"}],
-    [{"text": "🎵 Media", "callback_data": "media"},
-     {"text": "🎮 Juegos", "callback_data": "games"}],
-    [{"text": "🌐 Red", "callback_data": "red"},
-     {"text": "☁️ VPS", "callback_data": "vps"}],
+    [{"text": "⚡ Estado", "callback_data": "estado"},
+     {"text": "💀 Procesos", "callback_data": "procesos"}],
+    [{"text": "⚙ Servicios", "callback_data": "servicios"},
+     {"text": "💾 Updates", "callback_data": "updates"}],
+    [{"text": "🔮 Tendencia", "callback_data": "trend"},
+     {"text": "🪄 Apps", "callback_data": "apps"}],
+    [{"text": "🎚 Media", "callback_data": "media"},
+     {"text": "🕹 Juegos", "callback_data": "games"}],
+    [{"text": "📡 Red", "callback_data": "red"},
+     {"text": "🛸 VPS", "callback_data": "vps"}],
     [{"text": "🖥 Pantallas", "callback_data": "pantallas"},
-     {"text": "📢 Audio", "callback_data": "audio"},
-     {"text": "⚡ Poder", "callback_data": "poder"}],
+     {"text": "🎧 Audio", "callback_data": "audio"},
+     {"text": "☢ Poder", "callback_data": "poder"}],
 ]
 
 ESTADO_KB = [
@@ -1473,7 +1473,7 @@ def vps_kb(cfg: dict) -> list:
     rows = []
     cfg_vps = (cfg.get("vps") or {}).get("hosts") or {}
     for name in cfg_vps:
-        rows.append([{"text": f"☁️ {name}", "callback_data": f"vps:show:{name}"}])
+        rows.append([{"text": f"🛸 {name}", "callback_data": f"vps:show:{name}"}])
     if not rows:
         rows.append([{"text": "(sin VPS configurados)", "callback_data": "main"}])
     rows.append([{"text": "← Volver", "callback_data": "main"}])
@@ -1516,39 +1516,39 @@ def report_main(_):
 
 
 def report_estado(_):
-    return "<b>📊 Estado</b>\nElige qué ver:", ESTADO_KB
+    return "<b>⚡ Estado</b>\nElige qué ver:", ESTADO_KB
 
 
 def report_procesos(_):
-    return "<b>🧠 Procesos</b>\nElige qué ver:", PROCESOS_KB
+    return "<b>💀 Procesos</b>\nElige qué ver:", PROCESOS_KB
 
 
 def report_servicios(ctx):
-    return "<b>🔧 Servicios</b>\nElige qué ver:", servicios_kb(ctx.cfg)
+    return "<b>⚙ Servicios</b>\nElige qué ver:", servicios_kb(ctx.cfg)
 
 
 def report_servicios_manage(ctx):
     return (
-        "<b>🔧 Controlar servicios</b>\nElige cuál:",
+        "<b>⚙ Controlar servicios</b>\nElige cuál:",
         manage_services_kb(ctx.cfg),
     )
 
 
 def report_poder(_):
-    return "<b>⚡ Poder</b>\nElige una acción:", PODER_KB
+    return "<b>☢ Poder</b>\nElige una acción:", PODER_KB
 
 
 def report_audio(_):
     sinks, err = audio_sinks()
     if err:
         return (
-            f"<b>📢 Audio</b>\n❌ <pre>{html_escape(err)}</pre>",
+            f"<b>🎧 Audio</b>\n❌ <pre>{html_escape(err)}</pre>",
             back_kb("main"),
         )
     if not sinks:
-        return "<b>📢 Audio</b>\nNo se detectaron sinks.", back_kb("main")
+        return "<b>🎧 Audio</b>\nNo se detectaron sinks.", back_kb("main")
     default, _ = audio_default_sink()
-    lines = ["<b>📢 Audio</b>", ""]
+    lines = ["<b>🎧 Audio</b>", ""]
     for s in sinks:
         mark = "✅" if s["name"] == default else "⭕"
         lines.append(f"{mark} {s['icon']} <code>{html_escape(s['label'])}</code>")
@@ -1595,7 +1595,7 @@ def report_media(ctx):
     players = mpris_players(ctx.cfg)
     if not players:
         return (
-            "<b>🎵 Media</b>\n"
+            "<b>🎚 Media</b>\n"
             "No hay reproductores MPRIS activos.\n"
             "<i>Abre Spotify, Brave (con YouTube/SoundCloud) u otro player MPRIS y refresca.</i>",
             [[{"text": "🔄 Refrescar", "callback_data": "media"},
@@ -1605,7 +1605,7 @@ def report_media(ctx):
     st = mpris_status(selected)
     icon = "▶️" if st["status"] == "Playing" else ("⏸" if st["status"] == "Paused" else "⏹")
     title = st["title"] or "<sin título>"
-    body = [f"<b>🎵 Media</b> — <code>{html_escape(selected)}</code>", ""]
+    body = [f"<b>🎚 Media</b> — <code>{html_escape(selected)}</code>", ""]
     body.append(f"{icon} <b>{html_escape(title)}</b>")
     if st["artist"]:
         body.append(f"   {html_escape(st['artist'])}")
@@ -1618,7 +1618,7 @@ def report_media(ctx):
 
 
 def report_red(_):
-    return "<b>🌐 Red</b>\nElige una acción:", red_kb()
+    return "<b>📡 Red</b>\nElige una acción:", red_kb()
 
 
 def report_red_lan(_):
@@ -1662,22 +1662,22 @@ def report_vps(ctx):
     cfg_vps = (ctx.cfg.get("vps") or {}).get("hosts") or {}
     if not cfg_vps:
         return (
-            "<b>☁️ VPS</b>\n"
+            "<b>🛸 VPS</b>\n"
             "No hay VPS configurados.\n"
             "Agrega <code>[vps.hosts.&lt;alias&gt;]</code> con <code>ssh_alias = \"…\"</code> "
             "y opcional <code>summary_cmd = \"…\"</code>.",
             back_kb("main"),
         )
-    return "<b>☁️ VPS</b>\nElige un host:", vps_kb(ctx.cfg)
+    return "<b>🛸 VPS</b>\nElige un host:", vps_kb(ctx.cfg)
 
 
 def report_vps_status(ctx, alias: str):
     out, err = vps_status(ctx.cfg, alias)
     if err:
-        return f"<b>☁️ {html_escape(alias)}</b>\n❌ {html_escape(err)}", back_kb("vps")
+        return f"<b>🛸 {html_escape(alias)}</b>\n❌ {html_escape(err)}", back_kb("vps")
     body = out.strip() or "(sin output)"
     return (
-        f"<b>☁️ {html_escape(alias)}</b>\n<pre>{html_escape(body[:3500])}</pre>",
+        f"<b>🛸 {html_escape(alias)}</b>\n<pre>{html_escape(body[:3500])}</pre>",
         [[{"text": "🔄 Refrescar", "callback_data": f"vps:show:{alias}"},
           {"text": "← Volver", "callback_data": "vps"}]],
     )
@@ -1687,13 +1687,13 @@ def report_games(ctx):
     games = steam_games(ctx.cfg)
     if not games:
         return (
-            "<b>🎮 Juegos</b>\n"
+            "<b>🕹 Juegos</b>\n"
             "No se encontraron juegos en Steam (runtimes/Proton excluidos).\n"
             "Instala algo desde Steam y refresca este menú.",
             [[{"text": "🔄 Refrescar", "callback_data": "games"},
               {"text": "← Volver", "callback_data": "main"}]],
         )
-    lines = ["<b>🎮 Juegos</b>", ""]
+    lines = ["<b>🕹 Juegos</b>", ""]
     for g in games:
         lines.append(f"• <code>{g['appid']}</code> — {html_escape(g['name'])}")
     lines.append("")
@@ -1703,23 +1703,23 @@ def report_games(ctx):
 
 
 def report_trend(_):
-    return "<b>📈 Tendencia</b>\nElige ventana:", TREND_KB
+    return "<b>🔮 Tendencia</b>\nElige ventana:", TREND_KB
 
 
 def report_hosts(ctx):
-    return "<b>🌐 Otros hosts</b>", hosts_kb(ctx.cfg)
+    return "<b>📡 Otros hosts</b>", hosts_kb(ctx.cfg)
 
 
 def report_apps(ctx):
     if not ctx.cfg["apps"]:
         return (
-            "<b>🚀 Apps</b>\n"
+            "<b>🪄 Apps</b>\n"
             "No hay apps configuradas. Agregá entradas <code>[apps.&lt;nombre&gt;]</code> "
             "en <code>config.toml</code> con <code>cmd = [...]</code> y opcional "
             "<code>label = \"…\"</code>.",
             apps_kb(ctx.cfg),
         )
-    return "<b>🚀 Apps</b>\nElige cuál lanzar:", apps_kb(ctx.cfg)
+    return "<b>🪄 Apps</b>\nElige cuál lanzar:", apps_kb(ctx.cfg)
 
 
 def report_sistema(ctx):
@@ -1735,7 +1735,7 @@ def report_sistema(ctx):
     hostname = run(["hostname"]).strip() or "?"
     kernel = run(["uname", "-r"]).strip() or "?"
     text = (
-        f"<b>📊 Sistema</b>\n"
+        f"<b>⚡ Sistema</b>\n"
         f"Host: <code>{html_escape(hostname)}</code>\n"
         f"Kernel: <code>{html_escape(kernel)}</code>\n"
         f"Uptime: <code>{fmt_uptime(up)}</code>\n"
@@ -1750,7 +1750,7 @@ def report_sistema(ctx):
 def report_disco(ctx):
     rows = ctx.metrics.disk()
     if not rows:
-        return "<b>📊 Disco</b>\n(sin datos)", back_kb("estado")
+        return "<b>💾 Disco</b>\n(sin datos)", back_kb("estado")
     lines = [f"{'MOUNT':<22} {'USE%':>5}  {'USED':>7} / {'SIZE':>7}"]
     for r in rows:
         lines.append(
@@ -1759,7 +1759,7 @@ def report_disco(ctx):
         )
     body = "\n".join(lines)
     return (
-        "<b>📊 Disco</b>\n<pre>" + html_escape(body) + "</pre>",
+        "<b>💾 Disco</b>\n<pre>" + html_escape(body) + "</pre>",
         back_kb("estado"),
     )
 
@@ -1772,7 +1772,7 @@ def report_red(ctx):
         data = json.loads(raw)
     except (subprocess.SubprocessError, json.JSONDecodeError, FileNotFoundError) as e:
         return (
-            f"<b>📊 Red</b>\nerror: {html_escape(str(e))}",
+            f"<b>📡 Red</b>\nerror: {html_escape(str(e))}",
             back_kb("estado"),
         )
     lines_iface = []
@@ -1812,7 +1812,7 @@ def report_red(ctx):
         "\n\nPing:\n" + "\n".join(pings)
     )
     return (
-        "<b>📊 Red</b>\n<pre>" + html_escape(body) + "</pre>",
+        "<b>📡 Red</b>\n<pre>" + html_escape(body) + "</pre>",
         back_kb("estado"),
     )
 
@@ -1820,12 +1820,12 @@ def report_red(ctx):
 def report_temp(ctx):
     rows = ctx.metrics.temps()
     if not rows:
-        return "<b>📊 Temperaturas</b>\n(sin sensores)", back_kb("estado")
+        return "<b>🔥 Temperaturas</b>\n(sin sensores)", back_kb("estado")
     lines = []
     for r in rows:
         lines.append(f"{r['chip'][:20]:<20} {r['label'][:20]:<20} {r['c']:>5.1f}°C")
     return (
-        "<b>📊 Temperaturas</b>\n<pre>" + html_escape("\n".join(lines)) + "</pre>",
+        "<b>🔥 Temperaturas</b>\n<pre>" + html_escape("\n".join(lines)) + "</pre>",
         back_kb("estado"),
     )
 
@@ -1833,7 +1833,7 @@ def report_temp(ctx):
 def report_gpu(ctx):
     gpus = ctx.metrics.gpus()
     if not gpus:
-        return "<b>📊 GPU</b>\n(sin GPU detectada)", back_kb("estado")
+        return "<b>🩻 GPU</b>\n(sin GPU detectada)", back_kb("estado")
     lines = []
     for g in gpus:
         head = f"{g['name']} — {g['vendor']}"
@@ -1851,19 +1851,19 @@ def report_gpu(ctx):
             lines.append(f"  Pot: {g['power_w']:.1f} W")
         if g["fan_rpm"] is not None:
             lines.append(f"  Fan: {g['fan_rpm']} rpm")
-    return "<b>📊 GPU</b>\n" + "\n".join(lines), back_kb("estado")
+    return "<b>🩻 GPU</b>\n" + "\n".join(lines), back_kb("estado")
 
 
 def report_smart(ctx):
     devs = ctx.cfg.get("smart", {}).get("devices", [])
     if not devs:
         return (
-            "<b>📊 SMART</b>\nNo hay discos configurados en <code>[smart] devices</code>.",
+            "<b>🩺 SMART</b>\nNo hay discos configurados en <code>[smart] devices</code>.",
             back_kb("estado"),
         )
     if not shutil.which("smartctl"):
         return (
-            "<b>📊 SMART</b>\n<code>smartctl</code> no instalado (paquete <code>smartmontools</code>).",
+            "<b>🩺 SMART</b>\n<code>smartctl</code> no instalado (paquete <code>smartmontools</code>).",
             back_kb("estado"),
         )
     use_sudo = ctx.cfg.get("sudo", {}).get("enabled", False)
@@ -1885,7 +1885,7 @@ def report_smart(ctx):
         emoji = "✅" if verdict.lower() in ("passed", "ok") else "⚠"
         lines.append(f"{emoji} {dev}: {verdict}")
     return (
-        "<b>📊 SMART</b>\n<pre>" + html_escape("\n".join(lines)) + "</pre>",
+        "<b>🩺 SMART</b>\n<pre>" + html_escape("\n".join(lines)) + "</pre>",
         back_kb("estado"),
     )
 
@@ -1900,7 +1900,7 @@ def report_top(ctx, by: str):
     label = "CPU" if by == "cpu" else "RAM"
     ctx.last_top[by] = rows
     return (
-        f"<b>🧠 Top {label}</b>\n"
+        f"<b>💀 Top {label}</b>\n"
         f"<pre>{html_escape(header)}\n{html_escape(body)}</pre>",
         kill_kb(by, rows),
     )
@@ -1910,7 +1910,7 @@ def report_failed(ctx):
     units = list_failed_services()
     out = "(sin servicios fallidos)" if not units else "\n".join(units)
     return (
-        "<b>🔧 Servicios fallidos</b>\n<pre>" + html_escape(out[:3500]) + "</pre>",
+        "<b>⚙ Servicios fallidos</b>\n<pre>" + html_escape(out[:3500]) + "</pre>",
         back_kb("servicios"),
     )
 
@@ -1927,7 +1927,7 @@ def report_clave(ctx):
             emoji = "❌"
         lines.append(f"{emoji} {s}: {state}")
     return (
-        "<b>🔧 Servicios clave</b>\n<pre>"
+        "<b>⚙ Servicios clave</b>\n<pre>"
         + html_escape("\n".join(lines)) + "</pre>",
         back_kb("servicios"),
     )
@@ -1937,7 +1937,7 @@ def report_svc_actions(ctx, svc: str):
     state = run(["systemctl", "is-active", svc]).strip()
     sub = run(["systemctl", "is-enabled", svc]).strip()
     return (
-        f"<b>🔧 {html_escape(svc)}</b>\n"
+        f"<b>⚙ {html_escape(svc)}</b>\n"
         f"Activo: <code>{html_escape(state)}</code>\n"
         f"Habilitado: <code>{html_escape(sub)}</code>",
         svc_actions_kb(svc),
@@ -1949,7 +1949,7 @@ def report_svc_status(ctx, svc: str):
         "systemctl", "status", svc, "--no-pager", "-n", "20",
     ], timeout=10)
     return (
-        f"<b>🔧 {html_escape(svc)} — status</b>\n"
+        f"<b>⚙ {html_escape(svc)} — status</b>\n"
         f"<pre>{html_escape(out[:3500])}</pre>",
         [[{"text": "← Volver", "callback_data": f"svcmenu:{svc}"}]],
     )
@@ -1977,13 +1977,13 @@ def report_updates(ctx):
         )
     except FileNotFoundError:
         return (
-            "<b>📦 Updates</b>\n<code>" + html_escape(cmd[0]) +
+            "<b>💾 Updates</b>\n<code>" + html_escape(cmd[0]) +
             "</code> no instalado. En CachyOS: <code>sudo pacman -S pacman-contrib</code>.",
             back_kb("main"),
         )
     except subprocess.TimeoutExpired:
         return (
-            "<b>📦 Updates</b>\n<code>" + html_escape(cmd[0]) +
+            "<b>💾 Updates</b>\n<code>" + html_escape(cmd[0]) +
             "</code> tardó más de 30 s — sin respuesta.",
             back_kb("main"),
         )
@@ -1995,7 +1995,7 @@ def report_updates(ctx):
     if proc.returncode not in (0, 2):
         msg = stderr or stdout or f"exit {proc.returncode}"
         return (
-            "<b>📦 Updates</b>\nNo se pudo obtener la lista:\n"
+            "<b>💾 Updates</b>\nNo se pudo obtener la lista:\n"
             f"<pre>{html_escape(msg[:2000])}</pre>\n"
             "Suele ser DB de pacman desactualizada o mirrors caídos.",
             back_kb("main"),
@@ -2009,7 +2009,7 @@ def report_updates(ctx):
         if len(lines) > 30:
             body += f"\n… y {len(lines) - 30} más"
     return (
-        "<b>📦 Updates</b>\n<pre>" + html_escape(body[:3800]) + "</pre>",
+        "<b>💾 Updates</b>\n<pre>" + html_escape(body[:3800]) + "</pre>",
         back_kb("main"),
     )
 
@@ -2036,7 +2036,7 @@ def report_trend_window(ctx, secs: int):
     rows = ctx.history.fetch(secs)
     if not rows:
         return (
-            "<b>📈 Tendencia</b>\nAún no hay datos suficientes.",
+            "<b>🔮 Tendencia</b>\nAún no hay datos suficientes.",
             back_kb("trend"),
         )
     lab = {3600: "1 h", 21600: "6 h", 86400: "24 h"}.get(secs, f"{secs}s")
@@ -2044,7 +2044,7 @@ def report_trend_window(ctx, secs: int):
     if png is None:
         last = rows[-1]
         text = (
-            f"<b>📈 Tendencia ({lab})</b>\n"
+            f"<b>🔮 Tendencia ({lab})</b>\n"
             f"matplotlib no disponible — sin gráfico.\n"
             f"Último snapshot:\n"
             f"  CPU: {last[1]:.0f} %\n"
@@ -2055,14 +2055,14 @@ def report_trend_window(ctx, secs: int):
         )
         return text, back_kb("trend")
     try:
-        ctx.tg.send_photo(png, caption=f"<b>📈 Tendencia — {lab}</b>")
+        ctx.tg.send_photo(png, caption=f"<b>🔮 Tendencia — {lab}</b>")
     except TelegramError as e:
         return (
-            f"<b>📈 Tendencia</b>\nerror enviando foto: {html_escape(str(e))}",
+            f"<b>🔮 Tendencia</b>\nerror enviando foto: {html_escape(str(e))}",
             back_kb("trend"),
         )
     return (
-        f"<b>📈 Tendencia</b>\nGrafiqué los últimos {lab}.",
+        f"<b>🔮 Tendencia</b>\nGrafiqué los últimos {lab}.",
         back_kb("trend"),
     )
 
