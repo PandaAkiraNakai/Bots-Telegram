@@ -1170,28 +1170,50 @@ def vps_status(cfg: dict, alias: str) -> tuple[str, str | None]:
 
 # ─── Steam / Games ───────────────────────────────────────────────────────────
 
+def steam_library_paths() -> list[Path]:
+    """Descubre todas las bibliotecas de Steam parseando libraryfolders.vdf.
+    Devuelve los directorios `steamapps/` de cada biblioteca (la default y las
+    externas — SSD, HDD, etc.). Cae al default si el VDF no existe o no
+    parsea."""
+    default_steamapps = Path.home() / ".local/share/Steam/steamapps"
+    vdf = default_steamapps / "libraryfolders.vdf"
+    libs: list[Path] = []
+    if vdf.exists():
+        try:
+            text = vdf.read_text(encoding="utf-8", errors="ignore")
+            for m in re.finditer(r'"path"\s*"([^"]+)"', text):
+                p = Path(m.group(1)) / "steamapps"
+                if p not in libs:
+                    libs.append(p)
+        except OSError:
+            pass
+    if not libs and default_steamapps.exists():
+        libs.append(default_steamapps)
+    return [p for p in libs if p.exists()]
+
+
 def steam_games(cfg: dict) -> list[dict]:
-    base = Path.home() / ".local/share/Steam/steamapps"
-    if not base.exists():
-        return []
     exclude = set((cfg.get("steam") or {}).get("exclude_appids") or [])
     games = []
-    for f in base.glob("appmanifest_*.acf"):
-        try:
-            text = f.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        m_id = re.search(r'"appid"\s*"(\d+)"', text)
-        m_name = re.search(r'"name"\s*"([^"]+)"', text)
-        if not m_id or not m_name:
-            continue
-        appid = m_id.group(1)
-        name = m_name.group(1)
-        if appid in exclude:
-            continue
-        if any(s in name for s in ("Steam Linux Runtime", "Proton", "Steamworks")):
-            continue
-        games.append({"appid": appid, "name": name})
+    seen = set()
+    for base in steam_library_paths():
+        for f in base.glob("appmanifest_*.acf"):
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            m_id = re.search(r'"appid"\s*"(\d+)"', text)
+            m_name = re.search(r'"name"\s*"([^"]+)"', text)
+            if not m_id or not m_name:
+                continue
+            appid = m_id.group(1)
+            if appid in exclude or appid in seen:
+                continue
+            name = m_name.group(1)
+            if any(s in name for s in ("Steam Linux Runtime", "Proton", "Steamworks")):
+                continue
+            seen.add(appid)
+            games.append({"appid": appid, "name": name})
     games.sort(key=lambda g: g["name"].lower())
     return games
 
