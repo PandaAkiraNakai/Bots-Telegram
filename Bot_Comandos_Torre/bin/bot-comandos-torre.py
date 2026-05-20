@@ -21,6 +21,7 @@ Stdlib solamente para core. matplotlib y SSH son opcionales.
 
 import json
 import os
+import random
 import re
 import shutil
 import sqlite3
@@ -104,6 +105,19 @@ def load_config(path: str) -> dict:
         "known_hosts", "/var/lib/bot-comandos-torre/known_hosts"
     )
     cfg.setdefault("apps", {})
+    cfg.setdefault("mpris", {})
+    cfg["mpris"].setdefault("ignore_players", [])
+    cfg.setdefault("red", {})
+    cfg["red"].setdefault("wake", {})
+    cfg.setdefault("vps", {})
+    cfg["vps"].setdefault("hosts", {})
+    cfg.setdefault("steam", {})
+    cfg["steam"].setdefault("use_gamescope", True)
+    cfg["steam"].setdefault("exclude_appids", [
+        "228980", "1070560", "1391110", "1493710", "1628350", "4183110",
+    ])
+    cfg.setdefault("obsidian", {})
+    cfg["obsidian"].setdefault("inbox_path", "")
     # Auto-borrado del chat: borra los mensajes que el bot mandó tras N
     # segundos. 0 desactiva. El reaper chequea cada
     # `chat_auto_delete_interval_s`.
@@ -1015,6 +1029,217 @@ def audio_set_sink(sink: str) -> str:
     return "ok"
 
 
+# ─── MPRIS (playerctl) ───────────────────────────────────────────────────────
+
+def _playerctl_env() -> dict:
+    uid = os.getuid()
+    return {
+        **os.environ,
+        "XDG_RUNTIME_DIR": f"/run/user/{uid}",
+        "LC_ALL": "C.UTF-8",
+    }
+
+
+def _playerctl_run(args: list[str], timeout: int = 5) -> tuple[int, str, str]:
+    try:
+        proc = subprocess.run(
+            ["playerctl", *args],
+            capture_output=True, text=True, timeout=timeout, env=_playerctl_env(),
+        )
+    except subprocess.TimeoutExpired:
+        return -1, "", "timeout"
+    except FileNotFoundError:
+        return -1, "", "playerctl no encontrado"
+    return proc.returncode, proc.stdout or "", (proc.stderr or "").strip()
+
+
+def mpris_players(cfg: dict | None = None) -> list[str]:
+    rc, stdout, _ = _playerctl_run(["-l"])
+    if rc != 0:
+        return []
+    ignore = set((cfg or {}).get("mpris", {}).get("ignore_players") or [])
+    return [p.strip() for p in stdout.splitlines() if p.strip() and p.strip() not in ignore]
+
+
+def mpris_status(player: str) -> dict:
+    args = ["-p", player]
+    out: dict = {"status": "?", "title": "", "artist": "", "album": ""}
+    rc, stdout, _ = _playerctl_run([*args, "status"])
+    if rc == 0:
+        out["status"] = stdout.strip()
+    for field in ("title", "artist", "album"):
+        rc, stdout, _ = _playerctl_run([*args, "metadata", f"xesam:{field}"])
+        if rc == 0:
+            out[field] = stdout.strip()
+    return out
+
+
+def mpris_action(action: str, player: str) -> str:
+    base = ["-p", player]
+    if action == "vol+":
+        args = [*base, "volume", "0.05+"]
+    elif action == "vol-":
+        args = [*base, "volume", "0.05-"]
+    elif action in ("play-pause", "next", "previous"):
+        args = [*base, action]
+    else:
+        return f"acción desconocida: {action}"
+    rc, _, stderr = _playerctl_run(args)
+    return "ok" if rc == 0 else (stderr[:200] or f"exit {rc}")
+
+
+# ─── Red (LAN scan + Wake-on-LAN) ────────────────────────────────────────────
+
+def lan_neighbors() -> list[dict]:
+    out = run(["ip", "-4", "neigh", "show"], timeout=5)
+    rows = []
+    for line in out.strip().splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        ip = parts[0]
+        dev = parts[parts.index("dev") + 1] if "dev" in parts else "?"
+        mac = parts[parts.index("lladdr") + 1] if "lladdr" in parts else ""
+        state = parts[-1]
+        rows.append({"ip": ip, "mac": mac, "dev": dev, "state": state})
+    return rows
+
+
+def default_gateway() -> str:
+    out = run(["ip", "route", "show", "default"], timeout=3).strip().splitlines()
+    if not out:
+        return ""
+    parts = out[0].split()
+    return parts[parts.index("via") + 1] if "via" in parts else ""
+
+
+def wol_send(target: str, cfg: dict) -> str:
+    mapping = (cfg.get("red") or {}).get("wake") or {}
+    mac = mapping.get(target, target)
+    if not re.match(r"^[0-9A-Fa-f]{2}([:.\-][0-9A-Fa-f]{2}){5}$", mac):
+        return f"MAC inválida o host no mapeado: {target}"
+    out = run(["wol", mac], timeout=5)
+    low = out.lower()
+    if "waking up" in low or "wake-up" in low or "magic packet" in low:
+        return "ok"
+    return out.strip()[:200] or "ok"
+
+
+def lan_scan_pretty() -> str:
+    gw = default_gateway()
+    nbrs = lan_neighbors()
+    lines = [">> NETSCAN", "-" * 40]
+    lines.append(f"gateway: {gw or '?'}")
+    lines.append(f"vecinos: {len(nbrs)}")
+    lines.append("")
+    lines.append(f"{'IP':<16}{'MAC':<19}{'IF':<8}STATE")
+    for n in nbrs[:30]:
+        lines.append(f"{n['ip']:<16}{n['mac']:<19}{n['dev']:<8}{n['state']}")
+    if gw:
+        lines.append("")
+        lines.append(f">> TRACEROUTE {gw}")
+        tr = run(["traceroute", "-n", "-q", "1", "-m", "5", gw], timeout=10)
+        lines.append(tr.strip())
+    return "\n".join(lines)
+
+
+# ─── VPS bridge (SSH a servers conocidos) ────────────────────────────────────
+
+DEFAULT_VPS_SUMMARY = (
+    "echo '== uptime ==' && uptime && "
+    "echo '== disk /  ==' && df -hT / | tail -1 && "
+    "echo '== mem    ==' && free -h | sed -n '1,2p' && "
+    "echo '== docker ==' && (docker ps --format '{{.Names}}\\t{{.Status}}' 2>/dev/null | head -10 || echo 'sin docker')"
+)
+
+
+def vps_status(cfg: dict, alias: str) -> tuple[str, str | None]:
+    cfg_vps = (cfg.get("vps") or {}).get("hosts") or {}
+    spec = cfg_vps.get(alias)
+    if not isinstance(spec, dict):
+        return "", f"VPS '{alias}' no configurado"
+    ssh_alias = spec.get("ssh_alias") or alias
+    cmd = spec.get("summary_cmd") or DEFAULT_VPS_SUMMARY
+    out = run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+         ssh_alias, "bash", "-lc", cmd],
+        timeout=20,
+    )
+    return out, None
+
+
+# ─── Steam / Games ───────────────────────────────────────────────────────────
+
+def steam_games(cfg: dict) -> list[dict]:
+    base = Path.home() / ".local/share/Steam/steamapps"
+    if not base.exists():
+        return []
+    exclude = set((cfg.get("steam") or {}).get("exclude_appids") or [])
+    games = []
+    for f in base.glob("appmanifest_*.acf"):
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        m_id = re.search(r'"appid"\s*"(\d+)"', text)
+        m_name = re.search(r'"name"\s*"([^"]+)"', text)
+        if not m_id or not m_name:
+            continue
+        appid = m_id.group(1)
+        name = m_name.group(1)
+        if appid in exclude:
+            continue
+        if any(s in name for s in ("Steam Linux Runtime", "Proton", "Steamworks")):
+            continue
+        games.append({"appid": appid, "name": name})
+    games.sort(key=lambda g: g["name"].lower())
+    return games
+
+
+def steam_launch(appid: str, cfg: dict) -> str:
+    use_gamescope = (cfg.get("steam") or {}).get("use_gamescope", True)
+    gamescope = Path.home() / ".local/bin/gamescope-auto"
+    if use_gamescope and gamescope.exists():
+        cmd = [str(gamescope), f"steam://rungameid/{appid}"]
+    else:
+        cmd = ["steam", f"steam://rungameid/{appid}"]
+    uid = os.getuid()
+    env = {**os.environ, "XDG_RUNTIME_DIR": f"/run/user/{uid}", "LC_ALL": "C"}
+    full = ["systemd-run", "--user", "--collect", "--quiet", "--", *cmd]
+    try:
+        proc = subprocess.run(
+            full, capture_output=True, text=True, timeout=10, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return "timeout esperando a systemd-run"
+    except FileNotFoundError:
+        return "systemd-run no encontrado"
+    if proc.returncode == 0:
+        return "ok"
+    return ((proc.stderr or proc.stdout or "").strip()
+            or f"exit {proc.returncode}")
+
+
+# ─── Obsidian (nota rápida al inbox) ─────────────────────────────────────────
+
+def note_append(text: str, cfg: dict) -> str:
+    obs = cfg.get("obsidian") or {}
+    inbox = (obs.get("inbox_path") or "").strip()
+    if not inbox:
+        return "obsidian.inbox_path no configurado en config.toml"
+    p = Path(inbox)
+    if not p.parent.exists():
+        return f"vault no disponible (¿HDD montado?): {p.parent}"
+    try:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        entry = f"- **{ts}** — {text.strip()}\n"
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(entry)
+        return "ok"
+    except OSError as e:
+        return str(e)
+
+
 # ─── Menús ───────────────────────────────────────────────────────────────────
 
 MAIN_KB = [
@@ -1024,6 +1249,10 @@ MAIN_KB = [
      {"text": "📦 Updates", "callback_data": "updates"}],
     [{"text": "📈 Tendencia", "callback_data": "trend"},
      {"text": "🚀 Apps", "callback_data": "apps"}],
+    [{"text": "🎵 Media", "callback_data": "media"},
+     {"text": "🎮 Juegos", "callback_data": "games"}],
+    [{"text": "🌐 Red", "callback_data": "red"},
+     {"text": "☁️ VPS", "callback_data": "vps"}],
     [{"text": "🖥 Pantallas", "callback_data": "pantallas"},
      {"text": "📢 Audio", "callback_data": "audio"},
      {"text": "⚡ Poder", "callback_data": "poder"}],
@@ -1178,6 +1407,71 @@ def pantallas_kb(outputs: list[dict]) -> list:
     return rows
 
 
+def media_kb(players: list[str], selected: str, status: str) -> list:
+    play_label = "⏸ Pausa" if status == "Playing" else "▶ Play"
+    rows = [
+        [
+            {"text": "⏮ Prev", "callback_data": "media:prev"},
+            {"text": play_label, "callback_data": "media:toggle"},
+            {"text": "⏭ Next", "callback_data": "media:next"},
+        ],
+        [
+            {"text": "🔉 Vol−", "callback_data": "media:vol-"},
+            {"text": "🔊 Vol+", "callback_data": "media:vol+"},
+        ],
+    ]
+    if len(players) > 1:
+        line = []
+        for i, p in enumerate(players[:6]):
+            mark = "✓ " if p == selected else ""
+            short = p.split(".", 1)[0][:18]
+            line.append({"text": f"{mark}{short}", "callback_data": f"media:pick:{i}"})
+            if len(line) == 2:
+                rows.append(line)
+                line = []
+        if line:
+            rows.append(line)
+    rows.append([
+        {"text": "🔄 Refrescar", "callback_data": "media"},
+        {"text": "← Volver", "callback_data": "main"},
+    ])
+    return rows
+
+
+def red_kb() -> list:
+    return [
+        [{"text": "📡 Vecinos LAN", "callback_data": "red:lan"},
+         {"text": "🔭 Scan", "callback_data": "red:scan"}],
+        [{"text": "⚡ Wake-on-LAN", "callback_data": "red:wake"}],
+        [{"text": "← Volver", "callback_data": "main"}],
+    ]
+
+
+def vps_kb(cfg: dict) -> list:
+    rows = []
+    cfg_vps = (cfg.get("vps") or {}).get("hosts") or {}
+    for name in cfg_vps:
+        rows.append([{"text": f"☁️ {name}", "callback_data": f"vps:show:{name}"}])
+    if not rows:
+        rows.append([{"text": "(sin VPS configurados)", "callback_data": "main"}])
+    rows.append([{"text": "← Volver", "callback_data": "main"}])
+    return rows
+
+
+def games_kb(games: list[dict]) -> list:
+    rows = []
+    for g in games[:20]:
+        cb = f"game:launch:{g['appid']}"
+        if len(cb.encode("utf-8")) > 64:
+            continue
+        rows.append([{"text": f"▶ {g['name'][:40]}", "callback_data": cb}])
+    rows.append([
+        {"text": "🔄 Refrescar", "callback_data": "games"},
+        {"text": "← Volver", "callback_data": "main"},
+    ])
+    return rows
+
+
 def kill_kb(by: str, rows: list[list[str]]) -> list:
     btns = []
     line = []
@@ -1266,6 +1560,124 @@ def report_pantallas(_):
         "pantallas sin reordenar el layout (ideal para irte un rato).</i>"
     )
     return "\n".join(lines), pantallas_kb(outputs)
+
+
+def _media_selected(ctx, players: list[str]) -> str:
+    sel = getattr(ctx, "media_selected", "")
+    if sel in players:
+        return sel
+    return players[0] if players else ""
+
+
+def report_media(ctx):
+    players = mpris_players(ctx.cfg)
+    if not players:
+        return (
+            "<b>🎵 Media</b>\n"
+            "No hay reproductores MPRIS activos.\n"
+            "<i>Abre Spotify, Brave (con YouTube/SoundCloud) u otro player MPRIS y refresca.</i>",
+            [[{"text": "🔄 Refrescar", "callback_data": "media"},
+              {"text": "← Volver", "callback_data": "main"}]],
+        )
+    selected = _media_selected(ctx, players)
+    st = mpris_status(selected)
+    icon = "▶️" if st["status"] == "Playing" else ("⏸" if st["status"] == "Paused" else "⏹")
+    title = st["title"] or "<sin título>"
+    body = [f"<b>🎵 Media</b> — <code>{html_escape(selected)}</code>", ""]
+    body.append(f"{icon} <b>{html_escape(title)}</b>")
+    if st["artist"]:
+        body.append(f"   {html_escape(st['artist'])}")
+    if st["album"]:
+        body.append(f"   <i>{html_escape(st['album'])}</i>")
+    if len(players) > 1:
+        body.append("")
+        body.append(f"<i>Players activos: {len(players)}. Elige cuál controlar.</i>")
+    return "\n".join(body), media_kb(players, selected, st["status"])
+
+
+def report_red(_):
+    return "<b>🌐 Red</b>\nElige una acción:", red_kb()
+
+
+def report_red_lan(_):
+    nbrs = lan_neighbors()
+    if not nbrs:
+        return "<b>📡 Vecinos LAN</b>\n(sin vecinos)", back_kb("red")
+    header = f"{'IP':<16}{'MAC':<19}{'IF':<8}STATE"
+    rows = [header]
+    for n in nbrs[:30]:
+        rows.append(f"{n['ip']:<16}{n['mac']:<19}{n['dev']:<8}{n['state']}")
+    return (
+        f"<b>📡 Vecinos LAN</b>\n<pre>{html_escape(chr(10).join(rows))}</pre>",
+        back_kb("red"),
+    )
+
+
+def report_red_scan(_):
+    body = lan_scan_pretty()
+    return (
+        f"<b>🔭 Scan</b>\n<pre>{html_escape(body[:3500])}</pre>",
+        back_kb("red"),
+    )
+
+
+def report_red_wake(ctx):
+    targets = (ctx.cfg.get("red") or {}).get("wake") or {}
+    if not targets:
+        return (
+            "<b>⚡ Wake-on-LAN</b>\n"
+            "No hay hosts configurados.\n"
+            "Agrega entradas <code>[red.wake]</code> en <code>config.toml</code> "
+            "con <code>nombre = \"MAC\"</code>.",
+            back_kb("red"),
+        )
+    rows = [[{"text": f"⚡ {name}", "callback_data": f"red:wake:{name}"}] for name in targets]
+    rows.append([{"text": "← Volver", "callback_data": "red"}])
+    return "<b>⚡ Wake-on-LAN</b>\nElige un host:", rows
+
+
+def report_vps(ctx):
+    cfg_vps = (ctx.cfg.get("vps") or {}).get("hosts") or {}
+    if not cfg_vps:
+        return (
+            "<b>☁️ VPS</b>\n"
+            "No hay VPS configurados.\n"
+            "Agrega <code>[vps.hosts.&lt;alias&gt;]</code> con <code>ssh_alias = \"…\"</code> "
+            "y opcional <code>summary_cmd = \"…\"</code>.",
+            back_kb("main"),
+        )
+    return "<b>☁️ VPS</b>\nElige un host:", vps_kb(ctx.cfg)
+
+
+def report_vps_status(ctx, alias: str):
+    out, err = vps_status(ctx.cfg, alias)
+    if err:
+        return f"<b>☁️ {html_escape(alias)}</b>\n❌ {html_escape(err)}", back_kb("vps")
+    body = out.strip() or "(sin output)"
+    return (
+        f"<b>☁️ {html_escape(alias)}</b>\n<pre>{html_escape(body[:3500])}</pre>",
+        [[{"text": "🔄 Refrescar", "callback_data": f"vps:show:{alias}"},
+          {"text": "← Volver", "callback_data": "vps"}]],
+    )
+
+
+def report_games(ctx):
+    games = steam_games(ctx.cfg)
+    if not games:
+        return (
+            "<b>🎮 Juegos</b>\n"
+            "No se encontraron juegos en Steam (runtimes/Proton excluidos).\n"
+            "Instala algo desde Steam y refresca este menú.",
+            [[{"text": "🔄 Refrescar", "callback_data": "games"},
+              {"text": "← Volver", "callback_data": "main"}]],
+        )
+    lines = ["<b>🎮 Juegos</b>", ""]
+    for g in games:
+        lines.append(f"• <code>{g['appid']}</code> — {html_escape(g['name'])}")
+    lines.append("")
+    use_gs = (ctx.cfg.get("steam") or {}).get("use_gamescope", True)
+    lines.append(f"<i>Lanzador: {'gamescope-auto' if use_gs else 'steam directo'}</i>")
+    return "\n".join(lines), games_kb(games)
 
 
 def report_trend(_):
@@ -1775,6 +2187,13 @@ ROUTES = {
     "apps":             report_apps,
     "pantallas":        report_pantallas,
     "audio":            report_audio,
+    "media":            report_media,
+    "red":              report_red,
+    "red:lan":          report_red_lan,
+    "red:scan":         report_red_scan,
+    "red:wake":         report_red_wake,
+    "vps":              report_vps,
+    "games":            report_games,
     "poder":            report_poder,
     "poder:off":        lambda ctx: report_confirm_power("off"),
     "poder:reboot":     lambda ctx: report_confirm_power("reboot"),
@@ -1795,6 +2214,7 @@ class Context:
         self.alerts = alerts
         self.ssh = ssh
         self.last_top: dict[str, list] = {}
+        self.media_selected: str = ""
 
 
 # ─── Callback handler ────────────────────────────────────────────────────────
@@ -2019,6 +2439,98 @@ def handle_callback(cq: dict, ctx: Context) -> None:
             pass
         return
 
+    if data.startswith("media:"):
+        rest = data.split(":", 1)[1]
+        players = mpris_players(ctx.cfg)
+        if not players:
+            tg.answer(cb_id, "Sin players activos")
+            text, kb = report_media(ctx)
+            try:
+                tg.edit(msg_id, text, kb=kb)
+            except TelegramError:
+                pass
+            return
+        if rest.startswith("pick:"):
+            try:
+                idx = int(rest.split(":", 1)[1])
+                if 0 <= idx < len(players):
+                    ctx.media_selected = players[idx]
+                    tg.answer(cb_id, f"Player: {players[idx][:30]}")
+            except ValueError:
+                tg.answer(cb_id, "Índice inválido")
+        else:
+            selected = _media_selected(ctx, players)
+            action_map = {
+                "toggle": "play-pause",
+                "next": "next",
+                "prev": "previous",
+                "vol+": "vol+",
+                "vol-": "vol-",
+            }
+            act = action_map.get(rest)
+            if act is None:
+                tg.answer(cb_id, "Acción desconocida")
+                return
+            result = mpris_action(act, selected)
+            tg.answer(cb_id, "✅" if result == "ok" else f"❌ {result[:120]}")
+            ctx.audit.log("media_action", action=rest, player=selected, result=result)
+        text, kb = report_media(ctx)
+        try:
+            tg.edit(msg_id, text, kb=kb)
+        except TelegramError:
+            pass
+        return
+
+    if data.startswith("red:wake:"):
+        target = data.split(":", 2)[2]
+        result = wol_send(target, ctx.cfg)
+        tg.answer(cb_id, f"⚡ {target}: {result[:60]}")
+        ctx.audit.log("wol_send", target=target, result=result)
+        text, kb = report_red_wake(ctx)
+        try:
+            tg.edit(msg_id, text, kb=kb)
+        except TelegramError:
+            pass
+        return
+
+    if data.startswith("vps:show:"):
+        alias = data.split(":", 2)[2]
+        tg.answer(cb_id, f"Consultando {alias}…")
+        ctx.audit.log("vps_query", alias=alias)
+        text, kb = report_vps_status(ctx, alias)
+        try:
+            tg.edit(msg_id, text, kb=kb)
+        except TelegramError:
+            pass
+        return
+
+    if data.startswith("game:launch:"):
+        appid = data.split(":", 2)[2]
+        tg.answer(cb_id, f"Lanzando {appid}…")
+        try:
+            tg.edit(msg_id, f"⏳ Lanzando juego <code>{html_escape(appid)}</code>…")
+        except TelegramError:
+            pass
+        result = steam_launch(appid, ctx.cfg)
+        ctx.audit.log("game_launch", appid=appid, result=result)
+        try:
+            if result == "ok":
+                tg.edit(
+                    msg_id,
+                    f"✅ Juego <code>{html_escape(appid)}</code> lanzado.",
+                    kb=back_kb("games"),
+                )
+            else:
+                tg.edit(
+                    msg_id,
+                    f"❌ Juego <code>{html_escape(appid)}</code> falló:\n"
+                    f"<pre>{html_escape(result[:2000])}</pre>",
+                    kb=back_kb("games"),
+                )
+        except TelegramError:
+            pass
+        return
+
     if data == "noop":
         tg.answer(cb_id)
         return
@@ -2057,6 +2569,10 @@ SLASH_ROUTES = {
     "/apps":       "apps",
     "/pantallas":  "pantallas",
     "/audio":      "audio",
+    "/media":      "media",
+    "/red":        "red",
+    "/vps":        "vps",
+    "/games":      "games",
     "/poder":      "poder",
 }
 
@@ -2072,6 +2588,13 @@ BOT_COMMANDS = [
     {"command": "apps",      "description": "Lanzar aplicaciones GUI"},
     {"command": "pantallas", "description": "Encender / apagar monitores"},
     {"command": "audio",     "description": "Cambiar la salida de audio"},
+    {"command": "media",     "description": "Reproductores MPRIS (play/pause/vol)"},
+    {"command": "red",       "description": "Vecinos LAN, scan, Wake-on-LAN"},
+    {"command": "scan",      "description": "Scan rápido de la LAN"},
+    {"command": "wake",      "description": "Wake-on-LAN: /wake <host>"},
+    {"command": "vps",       "description": "Estado de VPS por SSH"},
+    {"command": "games",     "description": "Lanzar juegos de Steam"},
+    {"command": "nota",      "description": "Anotar al inbox de Obsidian: /nota <texto>"},
     {"command": "poder",     "description": "Apagar / reiniciar / suspender / bloquear"},
     {"command": "ping",      "description": "Health check"},
     {"command": "help",      "description": "Ayuda"},
@@ -2099,6 +2622,48 @@ def handle_message(msg: dict, ctx: Context) -> None:
     if cmd == "/ping":
         try:
             tg.send("pong")
+        except TelegramError:
+            pass
+        return
+    if cmd == "/nota":
+        rest = text[len("/nota"):].strip()
+        if not rest:
+            try:
+                tg.send("Uso: <code>/nota &lt;texto&gt;</code>")
+            except TelegramError:
+                pass
+            return
+        result = note_append(rest, ctx.cfg)
+        ctx.audit.log("note_added", chars=len(rest), result=result)
+        try:
+            if result == "ok":
+                tg.send(f"📝 Nota agregada al inbox ({len(rest)} chars).")
+            else:
+                tg.send(f"❌ {html_escape(result)}")
+        except TelegramError:
+            pass
+        return
+    if cmd == "/wake":
+        target = text[len("/wake"):].strip()
+        if not target:
+            targets = (ctx.cfg.get("red") or {}).get("wake") or {}
+            hosts = ", ".join(targets) or "(ninguno configurado)"
+            try:
+                tg.send(f"Uso: <code>/wake &lt;host&gt;</code>\nHosts: {html_escape(hosts)}")
+            except TelegramError:
+                pass
+            return
+        result = wol_send(target, ctx.cfg)
+        ctx.audit.log("wol_send", target=target, result=result)
+        try:
+            tg.send(f"⚡ <code>{html_escape(target)}</code>: {html_escape(result)}")
+        except TelegramError:
+            pass
+        return
+    if cmd == "/scan":
+        body = lan_scan_pretty()
+        try:
+            tg.send(f"<b>🔭 Scan</b>\n<pre>{html_escape(body[:3500])}</pre>")
         except TelegramError:
             pass
         return
@@ -2330,6 +2895,22 @@ def warn_whitelist_drift(cfg: dict) -> None:
 
 # ─── main ────────────────────────────────────────────────────────────────────
 
+BOOT_QUOTES = [
+    "Wake up, samurai. We have a city to burn.",
+    "The sky above the port was the color of television, tuned to a dead channel.",
+    "Plug in. Jack out.",
+    "The body is just chrome.",
+    "When the BLACKWALL flickers, runners get rich.",
+    "ICE-breakers warming up.",
+    "Output set. Stream open. We're in.",
+    "Net is wide. Watch your six.",
+    "Cyberspace: a consensual hallucination.",
+    "Code is poetry. Exploits are art.",
+    "Stack the deck. Burn the rig.",
+    "NetWatch sleeps. Runners don't.",
+]
+
+
 def main() -> None:
     cfg = load_config(CONFIG_PATH)
     warn_whitelist_drift(cfg)
@@ -2387,9 +2968,11 @@ def main() -> None:
             except OSError:
                 up = 0.0
             hostname = run(["hostname"]).strip() or "?"
+            quote = random.choice(BOOT_QUOTES)
             try:
                 tg.send(
                     f"🟢 <b>Torre iniciada</b> en <code>{html_escape(hostname)}</code>\n"
+                    f"<i>// {html_escape(quote)}</i>\n"
                     f"Uptime: {fmt_uptime(up)}\n\n"
                     f"Elige una categoría:",
                     kb=MAIN_KB,

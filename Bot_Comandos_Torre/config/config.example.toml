@@ -167,3 +167,65 @@ enabled = false
 # [apps.obsidian-ciencias]
 # cmd = ["obsidian", "obsidian://open?vault=Ciencias-"]
 # label = "📓 Obsidian (Ciencias)"
+
+# ─── Media / MPRIS (playerctl) ───────────────────────────────────────────
+# Controles play/pause/next/prev/volumen sobre cualquier reproductor con
+# soporte MPRIS (Spotify, Brave/YouTube, mpv, Apple Music, etc.). Requiere
+# el paquete `playerctl`.
+#
+# ignore_players: nombres exactos (los que devuelve `playerctl -l`) que
+# no quieres ver en el menú — útil para esconder players efímeros.
+#
+[mpris]
+ignore_players = []
+# ignore_players = ["chromium.instance123"]
+
+# ─── Red: vecinos LAN + Wake-on-LAN ──────────────────────────────────────
+# /scan, /red, /wake. Necesita los paquetes `iproute2` (ya viene), `wol`
+# y `traceroute`. Los hosts en [red.wake] son alias-a-MAC; el alias se
+# pasa a /wake y a los botones del menú.
+#
+# [red.wake]
+# notebook = "AA:BB:CC:DD:EE:FF"
+# tv       = "11:22:33:44:55:66"
+[red.wake]
+
+# ─── VPS bridge (SSH) ────────────────────────────────────────────────────
+# Cada [vps.hosts.<alias>] aparece en el menú "☁️ VPS". El daemon corre
+# `ssh -o BatchMode=yes -o ConnectTimeout=5 <ssh_alias> bash -lc <cmd>` y
+# muestra el output. El default de summary_cmd lista uptime, disco /,
+# memoria y `docker ps`.
+#
+# [vps.hosts.vpspriv]
+# ssh_alias = "vpspriv"
+# # summary_cmd = "uptime; docker ps --format '{{.Names}} {{.Status}}'"
+#
+# [vps.hosts.cloudpanel]
+# ssh_alias = "cloudpanel"
+[vps.hosts]
+
+# ─── Steam / Games ───────────────────────────────────────────────────────
+# Lista los juegos instalados leyendo
+# ~/.local/share/Steam/steamapps/appmanifest_*.acf y los lanza con
+# `gamescope-auto` (si está en ~/.local/bin/) o `steam directo`. Los
+# runtimes/Proton/Steamworks se filtran por nombre y por exclude_appids.
+#
+[steam]
+use_gamescope = true
+exclude_appids = [
+    "228980",   # Steamworks Common Redistributables
+    "1070560",  # Steam Linux Runtime 1.0 (scout)
+    "1391110",  # Steam Linux Runtime 2.0 (soldier)
+    "1493710",  # Proton Experimental
+    "1628350",  # Steam Linux Runtime 3.0 (sniper)
+    "4183110",  # Steam Linux Runtime 4.0
+]
+
+# ─── Obsidian (notas rápidas al inbox) ───────────────────────────────────
+# `/nota <texto>` hace append al archivo apuntado por inbox_path con
+# timestamp. Si el HDD/vault no está montado, la nota se rechaza con
+# mensaje claro (no se loggea silenciosamente).
+#
+[obsidian]
+inbox_path = ""
+# inbox_path = "/run/media/sergioc/HDD/Obsidian/Obsidian-Ciencias-/Obsidian Ciencias/Inbox.md"
