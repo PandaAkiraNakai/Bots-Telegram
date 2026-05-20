@@ -8,11 +8,15 @@ Hace dos cosas:
    logs, GPU, SMART, updates, tendencias, otros hosts vía SSH, **lanzar
    apps GUI en tu sesión**, **encender/apagar monitores (niri DPMS) y
    reordenar el layout**, **cambiar la salida de audio (pactl/PipeWire,
-   moviendo los streams activos)**, acciones de poder.
+   moviendo los streams activos)**, **controlar reproductores MPRIS
+   (playerctl: play/pause/next/prev/volumen)**, **scan de la LAN +
+   Wake-on-LAN**, **bridge SSH a VPS conocidos**, **lanzar juegos de
+   Steam** (con `gamescope-auto` si está disponible), **notas rápidas
+   al inbox de un vault Obsidian**, acciones de poder.
 2. **Push** (te avisa solo): alertas con histéresis (CPU, RAM, disco,
    temps, GPU, load), servicios que pasan a failed, nuevas sesiones,
    retorno de suspend, **torre iniciada** (boot real del PC, con el
-   menú principal pegado para empezar a navegar).
+   menú principal pegado y una línea cyberpunk aleatoria).
 
 Hermano de los proyectos `sudo-telegram` y `claude-telegram`. A diferencia
 de esos, **no** usa askpass ni socket: corre como `sergioc`, las acciones
@@ -42,6 +46,12 @@ cualquier otro chat se ignora silenciosamente.
                                   │   ├─ Apps (lanzar GUI vía systemd-run --user)
                                   │   ├─ Pantallas (niri DPMS + on/off por output)
                                   │   ├─ Audio (pactl: cambiar sink + mover streams)
+                                  │   ├─ Media (playerctl/MPRIS: play/pause/vol/next/prev)
+                                  │   ├─ Red (ip neigh + traceroute + Wake-on-LAN)
+                                  │   ├─ VPS (ssh BatchMode a hosts del config)
+                                  │   ├─ Juegos (parsea libraryfolders.vdf de Steam,
+                                  │   │           lanza con gamescope-auto si está)
+                                  │   ├─ /nota <texto> → append al inbox de Obsidian
                                   │   └─ Poder (off/reboot/suspend/lock)
                                   │
                                   └─ monitor thread (cada interval_s)
@@ -113,11 +123,16 @@ El bot funciona con stdlib de Python 3.11+. Estos extras prenden features:
 | Paquete | Qué habilita |
 |---|---|
 | `lm_sensors` | sensores de temperatura (sin esto cae a `/sys/class/thermal`) |
-| `python-matplotlib` | gráficos PNG en `📈 Tendencia` (sin esto cae a texto) |
-| `pacman-contrib` | comando `checkupdates` en `📦 Updates` |
-| `smartmontools` | reportes SMART en `📊 SMART` |
+| `python-matplotlib` | gráficos PNG en `🔮 Tendencia` (sin esto cae a texto) |
+| `pacman-contrib` | comando `checkupdates` en `💾 Updates` |
+| `smartmontools` | reportes SMART en `🩺 SMART` |
 | `niri` corriendo | menú `🖥 Pantallas` (vía `niri msg` sobre `/run/user/<uid>/niri.*.sock`) |
-| `pipewire-pulse` o `pulseaudio` | menú `📢 Audio` (vía `pactl`) |
+| `pipewire-pulse` o `pulseaudio` | menú `🎧 Audio` (vía `pactl`) |
+| `playerctl` | menú `🎚 Media` (control MPRIS sobre players activos) |
+| `wol` | botones de Wake-on-LAN en `📡 Red` (`/wake <host>`) |
+| `traceroute` | output completo de `/scan` y el botón "🔭 Scan" |
+| Steam instalado | menú `🕹 Juegos` (parsea `libraryfolders.vdf` y `appmanifest_*.acf`) |
+| `gamescope` + `~/.local/bin/gamescope-auto` | lanzamiento de juegos con gamescope en lugar de Steam directo (configurable) |
 
 `INSTALL.sh` te avisa al final cuáles te faltan.
 
@@ -140,6 +155,13 @@ al lado del campo de texto con la lista entera:
 | `/apps` | Lanzar aplicaciones GUI |
 | `/pantallas` | Encender / apagar monitores (niri DPMS + on/off por output) |
 | `/audio` | Cambiar la salida de audio (sink default + mover streams) |
+| `/media` | Controlar reproductores MPRIS (play/pause/next/prev/vol±) |
+| `/red` | Vecinos LAN, scan, Wake-on-LAN |
+| `/scan` | Scan rápido de la LAN (ip neigh + traceroute al gateway) |
+| `/wake <host>` | Wake-on-LAN sobre alias mapeado a MAC en `[red.wake]` |
+| `/vps` | Estado por SSH de los hosts en `[vps.hosts]` |
+| `/games` | Lista de juegos de Steam con lanzador |
+| `/nota <texto>` | Append timestamped al inbox de Obsidian (`[obsidian].inbox_path`) |
 | `/poder` | Acciones de poder (off / reboot / suspend / lock) |
 | `/ping` | Health check (responde `pong`) |
 | `/help` | Lista de comandos |
@@ -152,34 +174,47 @@ silenciosamente.
 
 ```
 Main
-├─ 📊 Estado
+├─ ⚡ Estado
 │   ├─ Sistema       (host, kernel, uptime, CPU%, cores, load, RAM)
 │   ├─ Disco         (df por mount, %)
 │   ├─ Red           (interfaces, throughput rx/tx, ping a hosts)
 │   ├─ Temperaturas  (lm_sensors o /sys/class/thermal)
 │   ├─ GPU           (uso %, VRAM, temp, power, fan — AMD + NVIDIA)
 │   └─ SMART         (smartctl -H por device — opcional, ver config)
-├─ 🧠 Procesos
+├─ 💀 Procesos
 │   ├─ Top CPU       (ps top 10 + botón ☠ kill por PID)
 │   └─ Top RAM       (idem)
-├─ 🔧 Servicios
+├─ ⚙ Servicios
 │   ├─ Fallidos      (systemctl --state=failed)
 │   ├─ Activos clave (sshd, NetworkManager, sudo-telegram, …)
 │   └─ Controlar     (start/stop/restart por unit del whitelist)
 ├─ 📜 Logs           (journalctl -p err -n 30)
-├─ 📈 Tendencia      (1 h / 6 h / 24 h, gráfico PNG)
-├─ 📦 Updates        (checkupdates)
-├─ 🌐 Otros hosts    (SSH a vpspriv, vpsgames, etc.)
-├─ 🚀 Apps          (botones por app configurada → lanza directo, sin confirmar)
-├─ 🖥 Pantallas     (lista outputs de niri; on/off por output + DPMS global)
-├─ 📢 Audio         (lista sinks de pactl; ✅ marca el default; click cambia
-│                    el default y mueve los streams activos al sink nuevo)
-└─ ⚡ Poder
+├─ 🔮 Tendencia      (1 h / 6 h / 24 h, gráfico PNG)
+├─ 💾 Updates        (checkupdates)
+├─ 🪄 Apps           (botones por app configurada → lanza directo, sin confirmar)
+├─ 🎚 Media          (playerctl: estado del player + play/pause/next/prev/vol±;
+│                     selector si hay varios players activos)
+├─ 🕹 Juegos         (lista juegos de todas las bibliotecas Steam — incluye
+│                     externas detectadas vía libraryfolders.vdf — lanza con
+│                     gamescope-auto o steam directo)
+├─ 📡 Red
+│   ├─ Vecinos LAN   (ip neigh, IP / MAC / IF / STATE)
+│   ├─ Scan          (vecinos + traceroute al gateway, estética netrunner)
+│   └─ Wake-on-LAN   (botones por alias de `[red.wake]`)
+├─ 🛸 VPS            (ssh BatchMode=yes a cada `[vps.hosts.<alias>]`,
+│                     summary_cmd default: uptime + df / + free + docker ps)
+├─ 🖥 Pantallas      (lista outputs de niri; on/off por output + DPMS global)
+├─ 🎧 Audio          (lista sinks de pactl; ✅ marca el default; click cambia
+│                     el default y mueve los streams activos al sink nuevo)
+└─ ☢ Poder
     ├─ 🔴 Apagar      → confirmación → systemctl poweroff
     ├─ 🔁 Reiniciar   → confirmación → systemctl reboot
     ├─ 💤 Suspender   → confirmación → systemctl suspend
     └─ 🔒 Bloquear    → confirmación → loginctl lock-sessions
 ```
+
+Comandos sueltos (no aparecen como botones en el main, solo como slash
+commands): `/scan`, `/wake <host>`, `/nota <texto>`.
 
 Cada acción de poder, kill de proceso, o start/stop/restart de servicio
 pide confirmación `✅ Sí / ❌ No` antes de ejecutarse, y el mensaje se
@@ -216,8 +251,9 @@ Eventos sin umbral (también push):
   (`/proc/sys/kernel/random/boot_id`) difiere del último persistido en
   `/var/lib/bot-comandos-torre/last_boot_id`. Garantiza una notificación
   por boot real del PC, sin falsos positivos por `systemctl restart`
-  manual. El mensaje trae el menú principal pegado para empezar a
-  navegar de inmediato.
+  manual. El mensaje incluye una línea cyberpunk aleatoria (12 quotes
+  en `BOOT_QUOTES`) y el menú principal pegado para empezar a navegar
+  de inmediato.
 
 ## Histórico
 
@@ -332,6 +368,11 @@ El daemon graba:
 - `audio_set` — cambio de sink default (`sink`, `result`)
 - `pantallas_set` — on/off de un output de niri (`output`, `action`, `result`)
 - `pantallas_dpms` — DPMS global on/off (`action`, `result`)
+- `media_action` — acción de MPRIS (`action`, `player`, `result`)
+- `wol_send` — envío de Wake-on-LAN (`target`, `result`)
+- `vps_query` — consulta SSH a un VPS configurado (`alias`)
+- `game_launch` — lanzamiento de juego de Steam (`appid`, `result`)
+- `note_added` — append al inbox de Obsidian (`chars`, `result`)
 - `chat_reaped` — lote de mensajes auto-borrados por el reaper (`count`)
 
 Para leer (requiere ser sergioc o root):

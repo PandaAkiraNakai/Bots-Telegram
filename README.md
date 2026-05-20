@@ -15,7 +15,7 @@ cuando las autorizas manualmente desde otro chat, y operar la máquina
 |---|---|---|
 | [`sudo-telegram/`](./sudo-telegram/) | `@tu_bot_de_sudo_bot` | `sudo -A <cmd>` te envía el comando al teléfono; respondes con botones ✅/❌ (o `/yes_<id>` / `/no_<id>` como fallback) y la contraseña se libera o `sudo` falla. |
 | [`claude-telegram/`](./claude-telegram/) | bot personal de Claude | Cualquier mensaje (texto, foto, nota de voz / audio, o documento genérico — PDF/PPT/ZIP/código/…) se pasa a `claude -p`. La respuesta vuelve al chat con streaming en vivo. `/new` inicia una sesión nueva. |
-| [`Bot_Comandos_Torre/`](./Bot_Comandos_Torre/) | bot de control de la máquina | Menú con inline keyboard: estado (uptime / RAM / disco / red / temperaturas), procesos top, servicios, y acciones de energía (apagar / reiniciar / suspender / bloquear) con confirmación en dos pasos. |
+| [`Bot_Comandos_Torre/`](./Bot_Comandos_Torre/) | bot de control de la máquina | Menú con inline keyboard: estado (uptime / RAM / disco / red / temperaturas / GPU / SMART), procesos top con kill, servicios systemd (failed / clave / start-stop-restart), updates, tendencias en PNG, lanzar GUI apps, **control de pantallas (niri)**, **audio (pactl)**, **media (playerctl/MPRIS)**, **scan de LAN + Wake-on-LAN**, **bridge SSH a VPS**, **lanzar juegos de Steam (con gamescope opcional)**, **notas rápidas a Obsidian**, y acciones de energía (apagar / reiniciar / suspender / bloquear) con confirmación en dos pasos. Estética cyberpunk en menús y push de "Torre iniciada". |
 
 Bots distintos, tokens distintos, chats distintos — diseñado así a
 propósito para que no se confundan visualmente y para que un token
