@@ -37,6 +37,13 @@ install -m 0644 -o root -g root \
     "$SRC_DIR/config/bot-comandos-torre.service" \
     /etc/systemd/system/bot-comandos-torre.service
 
+# 3b. Unidad oneshot pacman-update.service — la usa el botón "Aplicar"
+# del menú /updates. El bot la arranca vía polkit (ver allowedUnits).
+echo "==> Installing /etc/systemd/system/pacman-update.service"
+install -m 0644 -o root -g root \
+    "$SRC_DIR/config/pacman-update.service" \
+    /etc/systemd/system/pacman-update.service
+
 # 4. polkit rule (lets sergioc manage allow-listed power + service actions)
 echo "==> Installing /etc/polkit-1/rules.d/50-bot-comandos-torre.rules"
 install -m 0644 -o root -g root \

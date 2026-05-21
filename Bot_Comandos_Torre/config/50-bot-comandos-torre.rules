@@ -44,6 +44,10 @@ polkit.addRule(function(action, subject) {
             "sudo-telegram.service": true,
             "claude-telegram.service": true,
             "docker.service": true,
+            // Oneshot que ejecuta `pacman -Syu` (botón "Aplicar" en el
+            // menú /updates). Solo start/status; el unit es oneshot y
+            // no se habilita.
+            "pacman-update.service": true,
         };
         if (allowedUnits[unit]) {
             return polkit.Result.YES;

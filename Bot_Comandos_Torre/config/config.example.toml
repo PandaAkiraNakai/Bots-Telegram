@@ -114,9 +114,16 @@ manageable = [
 known_hosts = "/var/lib/bot-comandos-torre/known_hosts"
 
 # ─── Updates (Arch / CachyOS) ────────────────────────────────────────────
+# El menú /updates lista paquetes pendientes y ofrece un botón
+# "🔄 Aplicar" cuando hay updates. Ese botón arranca el oneshot
+# `pacman-update.service` (instalado por INSTALL.sh) vía polkit narrow-
+# scope — sin sudo en runtime. El bot pollea estado y avisa por chat
+# cuando termina con las últimas líneas del journal.
 [updates]
-# Default: checkupdates (paquete pacman-contrib).
-# Otra opción: ["pacman", "-Qu"] (requiere DB sincronizada).
+# Cómo listar updates pendientes. Default: checkupdates (paquete
+# pacman-contrib) — recomendado porque sincroniza una DB temporal
+# sin tocar /var/lib/pacman/sync.
+# Otra opción: ["pacman", "-Qu"] (requiere DB ya sincronizada).
 command = ["checkupdates"]
 
 # ─── SMART (salud de discos) ─────────────────────────────────────────────

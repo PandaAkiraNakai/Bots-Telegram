@@ -1082,10 +1082,25 @@ def mpris_action(action: str, player: str) -> str:
         args = [*base, "volume", "0.05-"]
     elif action in ("play-pause", "next", "previous"):
         args = [*base, action]
+    elif action.startswith("seek:"):
+        # seek:+10  → adelanta 10 s
+        # seek:-30  → retrocede 30 s
+        # playerctl espera "10+" / "30-" (sufijo, no prefijo).
+        delta = action[5:]
+        if not delta or delta[0] not in "+-" or not delta[1:].isdigit():
+            return f"seek inválido: {delta}"
+        sign = delta[0]
+        secs = delta[1:]
+        args = [*base, "position", f"{secs}{sign}"]
     else:
         return f"acción desconocida: {action}"
     rc, _, stderr = _playerctl_run(args)
-    return "ok" if rc == 0 else (stderr[:200] or f"exit {rc}")
+    if rc == 0:
+        return "ok"
+    # Players que no implementan Seek (Spotify clásico, Apple Music web)
+    # devuelven algo como "Seek is not supported" o similar. Lo dejamos
+    # pasar tal cual para que el chat lo muestre.
+    return (stderr[:200] or f"exit {rc}")
 
 
 # ─── Red (LAN scan + Wake-on-LAN) ────────────────────────────────────────────
@@ -1436,6 +1451,12 @@ def media_kb(players: list[str], selected: str, status: str) -> list:
             {"text": "⏮ Prev", "callback_data": "media:prev"},
             {"text": play_label, "callback_data": "media:toggle"},
             {"text": "⏭ Next", "callback_data": "media:next"},
+        ],
+        [
+            {"text": "⏪ −30", "callback_data": "media:seek:-30"},
+            {"text": "⏪ −10", "callback_data": "media:seek:-10"},
+            {"text": "⏩ +10", "callback_data": "media:seek:+10"},
+            {"text": "⏩ +30", "callback_data": "media:seek:+30"},
         ],
         [
             {"text": "🔉 Vol−", "callback_data": "media:vol-"},
@@ -1968,9 +1989,29 @@ def report_logs(ctx):
     )
 
 
+UPDATE_UNIT = "pacman-update.service"
+
+# Lock para no disparar dos applies en paralelo (uno desde el botón y
+# otro desde /aplicar-updates, por ejemplo).
+_update_lock = threading.Lock()
+_update_running = False
+
+
 def report_updates(ctx):
     cmd = ctx.cfg["updates"]["command"]
     env = {**os.environ, "LC_ALL": "C"}
+
+    # Si ya hay un apply corriendo, mostralo en vez de re-chequear.
+    if _update_running:
+        return (
+            "<b>💾 Updates</b>\n⏳ <i>Aplicando updates en este momento…</i>\n"
+            "Cuando termine te aviso por separado.",
+            [
+                [{"text": "📜 Ver log", "callback_data": "updates:log"}],
+                [{"text": "← Volver", "callback_data": "main"}],
+            ],
+        )
+
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=30, env=env,
@@ -2004,14 +2045,161 @@ def report_updates(ctx):
     lines = [l for l in stdout.splitlines() if l and "->" in l]
     if not lines:
         body = "Todo al día."
+        kb = back_kb("main")
     else:
         body = f"{len(lines)} paquete(s) pendiente(s):\n\n" + "\n".join(lines[:30])
         if len(lines) > 30:
             body += f"\n… y {len(lines) - 30} más"
+        kb = [
+            [{"text": f"🔄 Aplicar {len(lines)}", "callback_data": "updates:apply"}],
+            [{"text": "← Volver", "callback_data": "main"}],
+        ]
     return (
         "<b>💾 Updates</b>\n<pre>" + html_escape(body[:3800]) + "</pre>",
-        back_kb("main"),
+        kb,
     )
+
+
+def report_confirm_apply_updates(ctx):
+    # Re-chequeo cuántos hay para mostrar el número en la confirmación.
+    cmd = ctx.cfg["updates"]["command"]
+    env = {**os.environ, "LC_ALL": "C"}
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10, env=env,
+        )
+        lines = [l for l in (proc.stdout or "").splitlines() if l and "->" in l]
+        n = len(lines)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        n = 0
+    label = f"{n} paquete(s)" if n else "todo lo pendiente"
+    return (
+        f"<b>⚠️ ¿Aplicar {label}?</b>\n"
+        f"Ejecuta <code>pacman -Syu</code> como root vía "
+        f"<code>{html_escape(UPDATE_UNIT)}</code>.\n"
+        f"Puede tardar varios minutos. Te aviso cuando termine.",
+        confirm_kb("upd:apply", cancel_to="updates"),
+    )
+
+
+def report_update_log(ctx):
+    out = run(
+        ["journalctl", "-u", UPDATE_UNIT, "-n", "40", "--no-pager",
+         "-o", "short"],
+        timeout=10,
+    )
+    if not out.strip():
+        out = "(sin log aún)"
+    return (
+        "<b>💾 Update log</b>\n<pre>" + html_escape(out[-3500:]) + "</pre>",
+        back_kb("updates"),
+    )
+
+
+def _update_watcher(ctx, started_at: float) -> None:
+    """Pollea is-active del pacman-update.service y al terminar manda al
+    chat un mensaje con el resultado + últimas líneas del journal."""
+    global _update_running
+    try:
+        deadline = started_at + 35 * 60  # 35 min hard ceiling
+        last_state = ""
+        while time.time() < deadline:
+            time.sleep(5)
+            state = run(
+                ["systemctl", "is-active", UPDATE_UNIT], timeout=5,
+            ).strip()
+            last_state = state
+            # is-active devuelve "activating" mientras corre el ExecStart
+            # de un oneshot. Cuando termina, es "inactive" (ok) o
+            # "failed" (algo se rompió).
+            if state in ("inactive", "failed", "deactivating"):
+                break
+        else:
+            # timeout del watcher — el unit tiene su propio TimeoutStartSec=30min
+            ctx.tg.send(
+                f"⚠️ <b>Updates</b>: watcher se rindió tras 35 min. "
+                f"Estado actual: <code>{html_escape(last_state)}</code>.\n"
+                f"Revisa <code>journalctl -u {UPDATE_UNIT}</code>.",
+            )
+            ctx.audit.log("updates_apply_watcher_timeout", state=last_state)
+            return
+
+        # Resultado real desde systemctl show.
+        result = run(
+            ["systemctl", "show", UPDATE_UNIT,
+             "--property=Result", "--property=ExecMainStatus",
+             "--value", "--no-pager"],
+            timeout=5,
+        ).strip().splitlines()
+        exec_result = (result[0] if result else "").strip()
+        exec_status = (result[1] if len(result) > 1 else "").strip()
+        # Últimas 30 líneas del journal de este unit desde started_at.
+        since = datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+        log_out = run(
+            ["journalctl", "-u", UPDATE_UNIT,
+             "--since", since, "--no-pager", "-o", "short", "-n", "30"],
+            timeout=10,
+        ).strip() or "(sin output)"
+
+        ok = exec_result == "success" and exec_status == "0"
+        emoji = "✅" if ok else "❌"
+        header = (
+            f"{emoji} <b>Updates aplicados</b>" if ok
+            else f"{emoji} <b>Updates falló</b> "
+                 f"(<code>{html_escape(exec_result)}</code>, "
+                 f"exit <code>{html_escape(exec_status)}</code>)"
+        )
+        try:
+            ctx.tg.send(
+                f"{header}\n<pre>{html_escape(log_out[-3200:])}</pre>",
+                kb=[[{"text": "💾 Updates", "callback_data": "updates"}]],
+            )
+        except TelegramError:
+            pass
+        ctx.audit.log(
+            "updates_apply_done",
+            result=exec_result, exit=exec_status,
+            elapsed_s=int(time.time() - started_at),
+        )
+    finally:
+        with _update_lock:
+            _update_running = False
+
+
+def execute_apply_updates(ctx) -> str:
+    """Dispara el oneshot pacman-update.service en background y arranca
+    el watcher. Devuelve "ok" si systemctl aceptó el start, o el error
+    de systemctl si no."""
+    global _update_running
+    with _update_lock:
+        if _update_running:
+            return "ya hay un apply corriendo"
+        # Sanity: si la unidad existe en disco; si no, fallar limpio.
+        # `systemctl cat` devuelve no-cero si no existe.
+        try:
+            check = subprocess.run(
+                ["systemctl", "cat", UPDATE_UNIT],
+                capture_output=True, text=True, timeout=5,
+            )
+            if check.returncode != 0:
+                return (
+                    f"unit {UPDATE_UNIT} no instalado — corre INSTALL.sh"
+                )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return "no pude verificar el unit"
+        # --no-block: vuelve apenas systemd acepta el job, no espera ExecStart.
+        out = run(
+            ["systemctl", "start", "--no-block", UPDATE_UNIT], timeout=10,
+        ).strip()
+        if out and not out.startswith("<exit 0>"):
+            return out
+        _update_running = True
+    started = time.time()
+    threading.Thread(
+        target=_update_watcher, args=(ctx, started),
+        daemon=True, name="update-watcher",
+    ).start()
+    return "ok"
 
 
 def report_host(ctx, name: str):
@@ -2204,6 +2392,8 @@ ROUTES = {
     "servicios:manage": report_servicios_manage,
     "logs":             report_logs,
     "updates":          report_updates,
+    "updates:apply":    report_confirm_apply_updates,
+    "updates:log":      report_update_log,
     "trend":            report_trend,
     "hosts":            report_hosts,
     "apps":             report_apps,
@@ -2313,6 +2503,31 @@ def handle_callback(cq: dict, ctx: Context) -> None:
                 )
             except TelegramError:
                 pass
+            return
+        if token == "upd:apply":
+            tg.answer(cb_id, "Aplicando updates…")
+            try:
+                tg.edit(
+                    msg_id,
+                    "⏳ <b>Aplicando updates…</b>\n"
+                    "Esto puede tomar varios minutos. Te aviso cuando termine.",
+                    kb=[[{"text": "📜 Ver log", "callback_data": "updates:log"}]],
+                )
+            except TelegramError:
+                pass
+            ctx.audit.log("updates_apply_start")
+            result = execute_apply_updates(ctx)
+            if result != "ok":
+                try:
+                    tg.edit(
+                        msg_id,
+                        f"❌ <b>No se pudo lanzar el update</b>:\n"
+                        f"<pre>{html_escape(result[:2000])}</pre>",
+                        kb=back_kb("updates"),
+                    )
+                except TelegramError:
+                    pass
+                ctx.audit.log("updates_apply_start_failed", error=result)
             return
         if token.startswith("snooze:"):
             key = token.split(":", 1)[1]
@@ -2489,7 +2704,11 @@ def handle_callback(cq: dict, ctx: Context) -> None:
                 "vol+": "vol+",
                 "vol-": "vol-",
             }
-            act = action_map.get(rest)
+            if rest.startswith("seek:"):
+                # rest = "seek:+10" → mpris_action espera "seek:+10".
+                act = rest
+            else:
+                act = action_map.get(rest)
             if act is None:
                 tg.answer(cb_id, "Acción desconocida")
                 return
@@ -2605,7 +2824,7 @@ BOT_COMMANDS = [
     {"command": "servicios", "description": "Estado y control de servicios"},
     {"command": "logs",      "description": "Logs recientes"},
     {"command": "tendencia", "description": "Gráficas de tendencia"},
-    {"command": "updates",   "description": "Updates pendientes"},
+    {"command": "updates",   "description": "Updates pendientes (lista + aplicar)"},
     {"command": "hosts",     "description": "Otros hosts (vps)"},
     {"command": "apps",      "description": "Lanzar aplicaciones GUI"},
     {"command": "pantallas", "description": "Encender / apagar monitores"},

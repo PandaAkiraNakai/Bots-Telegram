@@ -1,0 +1,42 @@
+# /etc/systemd/system/pacman-update.service
+#
+# Oneshot lanzado por bot-comandos-torre al apretar "Aplicar" en el menú
+# de Updates. Corre `pacman -Syu` como root, sin TTY.
+#
+# Por qué un unit en vez de `sudo` desde el bot:
+#   - bot-comandos-torre tiene NoNewPrivileges=yes en su unit, así que
+#     `sudo` desde dentro del bot no podría elevar.
+#   - sergioc tiene polkit narrow-scope para systemd1.manage-units sobre
+#     unidades whitelisteadas (ver 50-bot-comandos-torre.rules). Levantar
+#     este servicio entra por ese carril — el bot pide a systemd que lo
+#     arranque, systemd lo corre fuera del cgroup del bot como root.
+#
+# El bot lanza con `systemctl start --no-block` y luego pollea
+# `is-active` cada pocos segundos. Cuando termina (inactive o failed),
+# manda un mensaje nuevo al chat con journalctl -u pacman-update -n 30.
+
+[Unit]
+Description=Pacman system upgrade (driven by bot-comandos-torre)
+Documentation=file:///home/sergioc/.bots/Bot_Comandos_Torre/README.md
+# Pacman necesita red para bajar paquetes.
+After=network-online.target
+Wants=network-online.target
+# Evita correr en paralelo con otros pacman (lock /var/lib/pacman/db.lck).
+ConditionPathExists=!/var/lib/pacman/db.lck
+
+[Service]
+Type=oneshot
+# --noconfirm: respuestas afirmativas a cualquier prompt.
+# --noprogressbar: progreso compacto en journal, sin ANSI.
+# --needed lo dejamos fuera a propósito: -Syu sin --needed es lo idiomático.
+ExecStart=/usr/bin/pacman -Syu --noconfirm --noprogressbar
+# Si pacman deja un .pacnew suelto el upgrade sigue siendo "exit 0", así
+# que no hay que filtrarlo acá.
+TimeoutStartSec=30min
+# Output va a journal — el bot lo lee con journalctl -u.
+StandardOutput=journal
+StandardError=journal
+
+# No es persistent: no se "habilita". Solo lo arranca el bot bajo demanda.
+[Install]
+WantedBy=
