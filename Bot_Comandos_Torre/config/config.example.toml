@@ -152,7 +152,7 @@ enabled = false
 # Requisitos:
 #   · Sesión de sergioc activa (login gráfico abierto). Sin sesión, el
 #     systemd --user no está corriendo y el lanzamiento falla con
-#     "Failed to connect to bus". Si querés que funcione sin sesión
+#     "Failed to connect to bus". Si quieres que funcione sin sesión
 #     activa: `loginctl enable-linger sergioc` (no recomendado, las apps
 #     GUI quedarían huérfanas hasta que abras niri).
 #   · cmd = lista (no string) — el primer elemento es el ejecutable, el

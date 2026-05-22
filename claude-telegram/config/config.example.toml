@@ -76,7 +76,7 @@ whisper_language = ""
 # "stream": comportamiento clásico — edita el mensaje de Telegram en vivo
 #   a medida que llega texto, intercala las herramientas que claude usa
 #   (📖 Read, 🔧 Bash…) y manda heartbeats si la query es larga. Útil si
-#   querés ver el progreso, ruidoso si solo querés la respuesta.
+#   quieres ver el progreso, ruidoso si solo quieres la respuesta.
 response_mode = "summary"
 
 # Switch interno: corre claude con --output-format stream-json (true) o

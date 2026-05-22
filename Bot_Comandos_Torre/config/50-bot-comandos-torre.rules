@@ -36,7 +36,7 @@ polkit.addRule(function(action, subject) {
         var unit = action.lookup("unit") || "";
         // Whitelist de unidades que sergioc puede manejar sin auth.
         // Bot_Comandos_Torre.service NO está acá: reiniciar el bot a sí mismo
-        // queda fuera de alcance (hacelo por ssh o sudo manualmente).
+        // queda fuera de alcance (hazlo por ssh o sudo manualmente).
         var allowedUnits = {
             "sshd.service": true,
             "NetworkManager.service": true,

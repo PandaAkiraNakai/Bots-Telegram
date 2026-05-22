@@ -50,7 +50,7 @@ dry_run = false
 # chat se llene de prompts viejos. 0 desactiva el feature.
 # El reaper chequea cada `chat_auto_delete_interval_s` segundos.
 # Telegram permite a un bot borrar SUS PROPIOS mensajes hasta 48h después
-# de enviados — más viejos quedan; los mensajes que mandás vos al bot no
+# de enviados — más viejos quedan; los mensajes que tú le mandas al bot no
 # se borran (Telegram no se lo permite a bots en chats privados).
 chat_auto_delete_s = 1800       # 30 min
 chat_auto_delete_interval_s = 60

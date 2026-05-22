@@ -63,7 +63,7 @@ if [ ! -f "$AUDIT" ]; then
     chown "$TARGET_USER:$TARGET_GROUP" "$AUDIT"
     chmod 0640 "$AUDIT"
 fi
-# Hacelo append-only — el daemon puede agregar pero no truncar ni borrar.
+# Hazlo append-only — el daemon puede agregar pero no truncar ni borrar.
 if command -v chattr >/dev/null 2>&1; then
     chattr +a "$AUDIT" 2>/dev/null || \
         echo "    (warn: no se pudo poner chattr +a en audit.log — sigue siendo writable)"

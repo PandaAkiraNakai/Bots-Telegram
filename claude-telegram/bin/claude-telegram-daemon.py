@@ -1086,7 +1086,7 @@ def build_image_prompt(caption: str, image_path: Path) -> str:
     tag = f"[Imagen adjunta: {image_path}]"
     if caption:
         return f"{caption}\n\n{tag}"
-    return f"{tag}\n\n(El mensaje no traía caption — abrila con la herramienta Read y respondé según lo que muestre.)"
+    return f"{tag}\n\n(El mensaje no traía caption — ábrela con la herramienta Read y responde según lo que muestre.)"
 
 
 def build_document_prompt(
@@ -1100,9 +1100,9 @@ def build_document_prompt(
         return f"{caption}\n\n{tag}"
     return (
         f"{tag}\n\n"
-        "(El mensaje no traía caption — inspeccioná el archivo y respondé "
-        "según lo que encuentres. Para PDF/texto/código usá Read directamente; "
-        "para zip/pkg/office usá Bash con la herramienta apropiada "
+        "(El mensaje no traía caption — inspecciona el archivo y responde "
+        "según lo que encuentres. Para PDF/texto/código usa Read directamente; "
+        "para zip/pkg/office usa Bash con la herramienta apropiada "
         "(unzip, pdftotext, pandoc, etc.) si hace falta.)"
     )
 
