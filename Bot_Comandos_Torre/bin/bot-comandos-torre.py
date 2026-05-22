@@ -943,6 +943,14 @@ def niri_dpms(on: bool) -> str:
     return (stderr or stdout or f"exit {rc}")[:300]
 
 
+def niri_fullscreen_window() -> str:
+    """Toggle fullscreen sobre la ventana enfocada (equivalente a Mod+F en niri)."""
+    rc, stdout, stderr = _niri_run(["action", "fullscreen-window"])
+    if rc == 0:
+        return "ok"
+    return (stderr or stdout or f"exit {rc}")[:300]
+
+
 # ─── Audio (pactl / PipeWire) ────────────────────────────────────────────────
 
 def _pactl_env() -> dict:
@@ -1461,6 +1469,9 @@ def media_kb(players: list[str], selected: str, status: str) -> list:
         [
             {"text": "🔉 Vol−", "callback_data": "media:vol-"},
             {"text": "🔊 Vol+", "callback_data": "media:vol+"},
+        ],
+        [
+            {"text": "⛶ Fullscreen (Mod+F)", "callback_data": "media:fullscreen"},
         ],
     ]
     if len(players) > 1:
@@ -2678,6 +2689,16 @@ def handle_callback(cq: dict, ctx: Context) -> None:
 
     if data.startswith("media:"):
         rest = data.split(":", 1)[1]
+        if rest == "fullscreen":
+            result = niri_fullscreen_window()
+            tg.answer(cb_id, "⛶ fullscreen" if result == "ok" else f"❌ {result[:120]}")
+            ctx.audit.log("media_action", action="fullscreen", player="", result=result)
+            text, kb = report_media(ctx)
+            try:
+                tg.edit(msg_id, text, kb=kb)
+            except TelegramError:
+                pass
+            return
         players = mpris_players(ctx.cfg)
         if not players:
             tg.answer(cb_id, "Sin players activos")
