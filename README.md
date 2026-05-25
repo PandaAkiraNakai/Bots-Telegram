@@ -113,3 +113,7 @@ Los vectores principales:
    contexto, no solo cuando el bot la invoca. Si una shell de
    `sergioc` queda comprometida, también puede apagar la máquina
    sin prompt.
+
+<!-- profile-excerpt -->
+Tres daemons que se complementan sobre un deck Linux: **aprobación out-of-band para `sudo`** (askpass + socket UNIX), **chat con Claude Code desde el teléfono** (streaming, voice-notes, documentos) y **panel de control remoto** (procesos, servicios, power-cycle con doble confirmación, updates de sistema vía oneshot polkit, MPRIS con seek). Cero secretos en el repo, deploy idempotente con `systemd` + `polkit`.
+<!-- /profile-excerpt -->
