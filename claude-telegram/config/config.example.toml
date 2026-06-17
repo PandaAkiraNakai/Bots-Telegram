@@ -108,3 +108,24 @@ output_attach_dir = ""              # "" = working_dir
 output_attach_max_files = 5
 output_attach_max_bytes = 10485760  # 10 MiB por archivo
 output_attach_max_depth = 4         # niveles desde output_attach_dir
+
+# ── Auto-suspensión / ahorro de GPU ──────────────────────────────────
+# El bot lanza `claude -p` por cada mensaje, y eso (vía el hook de
+# SessionStart + `mem`) mantiene el modelo de embeddings de Ollama fijado
+# en VRAM (keep_alive 30m). Para que la GPU se libere cuando no lo usas:
+#
+#   /suspender  → el bot se duerme y descarga el modelo de Ollama ya.
+#   /despertar  → vuelve a activarse (el modelo se recarga al primer msg).
+#
+# Estando suspendido, cualquier mensaje que no sea comando se rechaza con
+# un aviso (no se procesa hasta /despertar).
+
+# Segundos sin actividad tras los cuales se auto-suspende. 0 = desactivado.
+idle_suspend_s = 1800            # 30 min
+
+# Binario de ollama (cliente) usado para descargar modelos.
+ollama_bin = "/usr/bin/ollama"
+
+# Modelo a descargar al suspender, además de lo que esté cargado en
+# `ollama ps`. "" = solo barrer lo cargado. NO detiene `ollama serve`.
+ollama_model = "qwen3-embedding:4b"

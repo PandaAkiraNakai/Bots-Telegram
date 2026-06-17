@@ -81,6 +81,13 @@ def load_config(path: str) -> dict:
     cfg.setdefault("output_attach_max_files", 5)
     cfg.setdefault("output_attach_max_bytes", 10 * 1024 * 1024)
     cfg.setdefault("output_attach_max_depth", 4)
+    # Auto-suspensión: tras N segundos sin actividad el bot se suspende y
+    # descarga el modelo de Ollama para liberar la GPU. 0 = desactivado.
+    cfg.setdefault("idle_suspend_s", 1800)  # 30 min
+    cfg.setdefault("ollama_bin", "/usr/bin/ollama")
+    # Modelo que se descarga al suspender, además de cualquiera que aparezca
+    # cargado en 'ollama ps'. "" = solo barrer lo que esté cargado.
+    cfg.setdefault("ollama_model", "qwen3-embedding:4b")
     return cfg
 
 
@@ -126,6 +133,121 @@ def clear_state_keys(keys: list[str]) -> None:
             changed = True
     if changed:
         save_state(state)
+
+
+def unload_ollama(cfg: dict) -> list[str]:
+    """Descarga de la VRAM los modelos cargados en Ollama (equivale a
+    'ollama stop <modelo>', que fija keep_alive=0). NO detiene el servicio:
+    'ollama serve' sigue vivo y recarga on-demand cuando tu terminal vuelva
+    a usar 'mem'. Devuelve los nombres que se descargaron."""
+    ollama = cfg.get("ollama_bin", "/usr/bin/ollama")
+    if not (shutil.which(ollama) or Path(ollama).exists()):
+        print(f"unload_ollama: binario no encontrado: {ollama}", file=sys.stderr)
+        return []
+
+    loaded: list[str] = []
+    try:
+        ps = subprocess.run([ollama, "ps"], capture_output=True, text=True, timeout=15)
+        for line in ps.stdout.splitlines()[1:]:  # saltar el header
+            parts = line.split()
+            if parts:
+                loaded.append(parts[0])
+    except Exception as e:
+        print(f"ollama ps failed: {e}", file=sys.stderr)
+
+    target = cfg.get("ollama_model", "")
+    # dict.fromkeys preserva orden y deduplica
+    names = list(dict.fromkeys(loaded + ([target] if target else [])))
+
+    freed: list[str] = []
+    for name in names:
+        try:
+            r = subprocess.run(
+                [ollama, "stop", name], capture_output=True, text=True, timeout=20
+            )
+            if r.returncode == 0 and name in loaded:
+                freed.append(name)
+        except Exception as e:
+            print(f"ollama stop {name} failed: {e}", file=sys.stderr)
+    return freed
+
+
+class SuspendState:
+    """Gobierna si el bot está suspendido para ahorrar GPU.
+
+    Suspendido = no se procesa ningún mensaje que requiera claude (y por
+    ende Ollama); se exige /despertar. Al suspender se descargan los modelos
+    de Ollama de la VRAM. El watcher de inactividad suspende solo tras
+    cfg['idle_suspend_s'] segundos sin actividad."""
+
+    def __init__(self, cfg: dict, tg: "Telegram") -> None:
+        self.cfg = cfg
+        self.tg = tg
+        self._lock = threading.Lock()
+        self.suspended = bool(load_state().get("suspended", False))
+        self.last_activity = time.monotonic()
+        self.busy = 0  # queries de claude en vuelo; no auto-suspender si >0
+
+    def is_suspended(self) -> bool:
+        with self._lock:
+            return self.suspended
+
+    def begin(self) -> None:
+        with self._lock:
+            self.busy += 1
+            self.last_activity = time.monotonic()
+
+    def end(self) -> None:
+        with self._lock:
+            self.busy = max(0, self.busy - 1)
+            self.last_activity = time.monotonic()
+
+    def suspend(self) -> tuple[bool, list[str]]:
+        """Devuelve (ya_estaba_suspendido, modelos_descargados)."""
+        with self._lock:
+            already = self.suspended
+            self.suspended = True
+        update_state({"suspended": True})
+        freed = unload_ollama(self.cfg)
+        return already, freed
+
+    def resume(self) -> bool:
+        """Devuelve True si estaba suspendido (hubo cambio real)."""
+        with self._lock:
+            was = self.suspended
+            self.suspended = False
+            self.last_activity = time.monotonic()
+        update_state({"suspended": False})
+        return was
+
+
+# Singleton, inicializado en main().
+_suspend: "SuspendState | None" = None
+
+
+def idle_watcher(suspend: "SuspendState", tg: "Telegram", cfg: dict) -> None:
+    """Suspende el bot tras cfg['idle_suspend_s'] segundos sin actividad."""
+    while True:
+        time.sleep(60)
+        timeout = int(cfg.get("idle_suspend_s", 0))
+        if timeout <= 0:
+            continue
+        with suspend._lock:
+            if suspend.suspended or suspend.busy > 0:
+                continue
+            idle = time.monotonic() - suspend.last_activity
+        if idle < timeout:
+            continue
+        _, freed = suspend.suspend()
+        mins = timeout // 60
+        note = f"\nGPU liberada: {', '.join(freed)}." if freed else ""
+        try:
+            tg.send_message(
+                f"😴 Suspendido automáticamente tras {mins} min sin actividad.{note}\n"
+                "Usa /despertar para reactivarme."
+            )
+        except TelegramError:
+            pass
 
 
 MODEL_ALIASES = {
@@ -1145,6 +1267,7 @@ def safe_send_md2(tg: Telegram, text: str) -> None:
 CONTROL_COMMANDS = frozenset({
     "/ping", "/help", "/start", "/new", "/stop",
     "/cwd", "/session", "/clear", "/clear_chat", "/model",
+    "/suspender", "/dormir", "/despertar", "/activar",
 })
 
 
@@ -1175,6 +1298,8 @@ def handle_slash_command(text: str, tg: Telegram, runner: ClaudeRunner) -> bool:
             "/cwd   — muestra el working directory\n"
             "/session — muestra el session_id actual\n"
             "/model — muestra/cambia el modelo (opus/sonnet/haiku/default)\n"
+            "/suspender — me duermo y libero la GPU (descarga el modelo de Ollama)\n"
+            "/despertar — me reactiva tras una suspensión\n"
             "/ping  — health check\n"
             "/help  — esta ayuda\n\n"
             "Cualquier otro texto se envía a `claude -p`.\n"
@@ -1242,6 +1367,31 @@ def handle_slash_command(text: str, tg: Telegram, runner: ClaudeRunner) -> bool:
         failed = attempted - succeeded
         note = f" ({failed} no se pudieron borrar — probablemente >48h)" if failed else ""
         safe_send(tg, f"🧹 Borré {succeeded}/{attempted} mensajes{note}")
+        return True
+    if cmd in ("/suspender", "/dormir"):
+        if _suspend is None:
+            safe_send(tg, "⚠️ control de suspensión no inicializado")
+            return True
+        already, freed = _suspend.suspend()
+        if already:
+            msg = "😴 Ya estaba suspendido."
+        else:
+            msg = "😴 Suspendido. No proceso mensajes hasta que uses /despertar."
+        if freed:
+            msg += f"\nGPU liberada: {', '.join(freed)}."
+        else:
+            msg += "\n(Ollama no tenía modelos cargados.)"
+        safe_send(tg, msg)
+        return True
+    if cmd in ("/despertar", "/activar"):
+        if _suspend is None:
+            safe_send(tg, "⚠️ control de suspensión no inicializado")
+            return True
+        was = _suspend.resume()
+        if was:
+            safe_send(tg, "☀️ Despierto. Escríbeme cuando quieras; el modelo se recarga solo al primer mensaje.")
+        else:
+            safe_send(tg, "☀️ Ya estaba activo.")
         return True
     return False
 
@@ -1369,6 +1519,22 @@ def poll_loop(
             voice_file_id, voice_kind = extract_voice_file_id(msg)
             doc_file_id, doc_name, doc_mime = extract_document_file_id(msg)
 
+            # Si está suspendido, rechazar cualquier cosa que no sea un
+            # comando de control — antes de bajar audios/imágenes/docs.
+            if (
+                _suspend is not None
+                and _suspend.is_suspended()
+                and _command_name(text) not in CONTROL_COMMANDS
+            ):
+                try:
+                    tg.send_message(
+                        "😴 Estoy suspendido para liberar la GPU. "
+                        "Usa /despertar para reactivarme."
+                    )
+                except TelegramError:
+                    pass
+                continue
+
             prompt: str | None = None
             if voice_file_id:
                 if not cfg["whisper_enabled"]:
@@ -1462,14 +1628,20 @@ def poll_loop(
 
             # serialise: one message at a time
             def work(p=prompt):
-                with worker_lock:
-                    try:
-                        handle_text(p, tg, runner, watcher)
-                    except Exception as e:
+                if _suspend is not None:
+                    _suspend.begin()
+                try:
+                    with worker_lock:
                         try:
-                            tg.send_message(f"⚠️ handler error: {e!r}")
-                        except TelegramError:
-                            pass
+                            handle_text(p, tg, runner, watcher)
+                        except Exception as e:
+                            try:
+                                tg.send_message(f"⚠️ handler error: {e!r}")
+                            except TelegramError:
+                                pass
+                finally:
+                    if _suspend is not None:
+                        _suspend.end()
 
             threading.Thread(target=work, daemon=True).start()
 
@@ -1489,6 +1661,9 @@ def main() -> None:
     runner = ClaudeRunner(cfg, tg, session_id=saved_sid, model=saved_model)
     transcriber = Transcriber(cfg)
 
+    global _suspend
+    _suspend = SuspendState(cfg, tg)
+
     watcher: OutputWatcher | None = None
     if cfg["output_attach_enabled"]:
         watch_root = Path(cfg["output_attach_dir"] or cfg["working_dir"]).expanduser()
@@ -1506,6 +1681,8 @@ def main() -> None:
         {"command": "cwd", "description": "Mostrar working directory"},
         {"command": "session", "description": "Mostrar session_id actual"},
         {"command": "model", "description": "Mostrar/cambiar modelo (opus/sonnet/haiku/default)"},
+        {"command": "suspender", "description": "Dormir y liberar la GPU (Ollama)"},
+        {"command": "despertar", "description": "Reactivar tras una suspensión"},
         {"command": "ping", "description": "Health check"},
         {"command": "help", "description": "Ayuda"},
     ])
@@ -1521,6 +1698,16 @@ def main() -> None:
         f"attach={cfg['output_attach_enabled']}",
         file=sys.stderr,
     )
+
+    if _suspend.is_suspended():
+        # Arrancó suspendido (persistido de antes): asegurar GPU libre.
+        unload_ollama(cfg)
+        print("startup: suspendido (persistido) — GPU descargada", file=sys.stderr)
+
+    if int(cfg.get("idle_suspend_s", 0)) > 0:
+        threading.Thread(
+            target=idle_watcher, args=(_suspend, tg, cfg), daemon=True
+        ).start()
 
     try:
         poll_loop(tg, runner, transcriber, watcher, cfg, cfg["poll_timeout_s"])
